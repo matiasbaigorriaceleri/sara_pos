@@ -1,19 +1,23 @@
-venv/
-**pycache**/
+```gitignore id="x7pq9n"
+# Python
+__pycache__/
 *.pyc
-*.pyo
-*.pyd
+
+# Virtual environment
+venv/
+
+# SQLite
+*.db
+
+# VS Code
+.vscode/
+
+# macOS
 .DS_Store
 
+# Logs
+logs/
+
+# Environment
 .env
-
-.vscode/
-.idea/
-
-dist/
-build/
-*.spec
-
-database.db
-
-app/logs/
+```
