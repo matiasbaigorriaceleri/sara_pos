@@ -1,71 +1,44 @@
-# =========================================
-# SARA POS - Official Theme
-# =========================================
-
-# COLORS
 
 PRIMARY_COLOR = "#4A6A92"
 
-SIDEBAR_COLOR = "#28364A"
+BACKGROUND_COLOR = "#F3F4F6"
 
-SECONDARY_COLOR = "#8EA3BB"
+SIDEBAR_COLOR = "#2F3E4E"
 
-BACKGROUND_COLOR = "#DFE6EE"
+TEXT_DARK = "#1E293B"
 
-SUCCESS_COLOR = "#8B9B8B"
-
-TEXT_DARK = "#1E1E1E"
-
-TEXT_LIGHT = "#FFFFFF"
-
-
-# =========================================
-# GLOBAL WINDOW STYLE
-# =========================================
-
-WINDOW_STYLE = f"""
-QWidget {{
-    background-color: {BACKGROUND_COLOR};
-    color: {TEXT_DARK};
-    font-size: 14px;
-    font-family: Arial;
-}}
-"""
-
-
-# =========================================
-# INPUT STYLE
-# =========================================
-
-INPUT_STYLE = f"""
-QLineEdit {{
-    padding: 10px;
-    border-radius: 8px;
-    border: 1px solid {SECONDARY_COLOR};
+INPUT_STYLE = """
+QLineEdit {
     background-color: white;
-    color: {TEXT_DARK};
-}}
+    border: 1px solid #BFC7D1;
+    border-radius: 12px;
+    padding: 12px;
+    font-size: 16px;
+    color: #1E293B;
+}
 
-QLineEdit:focus {{
-    border: 2px solid {PRIMARY_COLOR};
-}}
+QLineEdit:focus {
+    border: 2px solid #4A6A92;
+}
 """
 
-
-# =========================================
-# BUTTON STYLE
-# =========================================
-
-BUTTON_STYLE = f"""
-QPushButton {{
-    background-color: {PRIMARY_COLOR};
+BUTTON_STYLE = """
+QPushButton {
+    background-color: #4A6A92;
     color: white;
-    border-radius: 8px;
-    padding: 12px;
+    border: none;
+    border-radius: 12px;
+    font-size: 16px;
     font-weight: bold;
-}}
+}
 
-QPushButton:hover {{
-    background-color: {SIDEBAR_COLOR};
-}}
+QPushButton:hover {
+    background-color: #3D5A80;
+}
+"""
+
+SIDEBAR_STYLE = """
+QWidget {
+    background-color: #2F3E4E;
+}
 """

@@ -2,82 +2,218 @@
 from PySide6.QtWidgets import (
     QWidget,
     QLabel,
-    QLineEdit,
-    QPushButton,
     QVBoxLayout,
+    QPushButton,
+    QLineEdit,
     QMessageBox,
 )
 
 from PySide6.QtCore import Qt
 
-from app.views.dashboard_window import DashboardWindow
-
-from app.database.database import SessionLocal
-from app.models.user_model import User
-
 from app.assets.themes.theme import (
-    WINDOW_STYLE,
+    PRIMARY_COLOR,
+    BACKGROUND_COLOR,
     INPUT_STYLE,
     BUTTON_STYLE,
-    PRIMARY_COLOR,
+)
+
+from app.database.database import (
+    SessionLocal
+)
+
+from app.models.user_model import (
+    User
+)
+
+from app.views.main_window import (
+    MainWindow
+)
+
+from app.session.user_session import (
+    current_user
 )
 
 
 class LoginWindow(QWidget):
+
     def __init__(self):
         super().__init__()
 
-        self.setWindowTitle("SARA POS - Login")
-        self.setFixedSize(400, 300)
+        self.setup_ui()
 
-        self.setStyleSheet(WINDOW_STYLE)
+    # =====================================
+    # UI
+    # =====================================
 
-        layout = QVBoxLayout()
+    def setup_ui(self):
 
-        title = QLabel("SARA POS")
-        title.setAlignment(Qt.AlignCenter)
+        self.setWindowTitle(
+            "SARA POS - Login"
+        )
+
+        self.setFixedSize(
+            760,
+            520
+        )
+
+        self.setStyleSheet(f"""
+            background-color: {BACKGROUND_COLOR};
+        """)
+
+        main_layout = QVBoxLayout()
+
+        main_layout.setContentsMargins(
+            70,
+            50,
+            70,
+            50
+        )
+
+        main_layout.setSpacing(22)
+
+        main_layout.setAlignment(
+            Qt.AlignCenter
+        )
+
+        # =====================================
+        # TITLE
+        # =====================================
+
+        title = QLabel(
+            "SARA POS"
+        )
+
+        title.setAlignment(
+            Qt.AlignCenter
+        )
 
         title.setStyleSheet(f"""
-            font-size: 32px;
+            font-size: 58px;
             font-weight: bold;
-            margin-bottom: 20px;
             color: {PRIMARY_COLOR};
         """)
 
+        main_layout.addWidget(
+            title
+        )
+
+        # =====================================
+        # SUBTITLE
+        # =====================================
+
+        subtitle = QLabel(
+            "Sistema de ventas"
+        )
+
+        subtitle.setAlignment(
+            Qt.AlignCenter
+        )
+
+        subtitle.setStyleSheet("""
+            font-size: 22px;
+            color: #64748B;
+            margin-bottom: 25px;
+        """)
+
+        main_layout.addWidget(
+            subtitle
+        )
+
+        # =====================================
+        # USERNAME
+        # =====================================
+
         self.username_input = QLineEdit()
-        self.username_input.setPlaceholderText("Usuario")
-        self.username_input.setStyleSheet(INPUT_STYLE)
+
+        self.username_input.setPlaceholderText(
+            "Usuario"
+        )
+
+        self.username_input.setMinimumHeight(
+            62
+        )
+
+        self.username_input.setStyleSheet(
+            INPUT_STYLE
+        )
+
+        main_layout.addWidget(
+            self.username_input
+        )
+
+        # =====================================
+        # PASSWORD
+        # =====================================
 
         self.password_input = QLineEdit()
-        self.password_input.setPlaceholderText("Contraseña")
-        self.password_input.setEchoMode(QLineEdit.Password)
-        self.password_input.setStyleSheet(INPUT_STYLE)
 
-        login_button = QPushButton("Ingresar")
-        login_button.setStyleSheet(BUTTON_STYLE)
+        self.password_input.setPlaceholderText(
+            "Contraseña"
+        )
 
-        login_button.clicked.connect(self.login)
+        self.password_input.setEchoMode(
+            QLineEdit.Password
+        )
 
-        self.username_input.returnPressed.connect(
-            self.password_input.setFocus
+        self.password_input.setMinimumHeight(
+            62
+        )
+
+        self.password_input.setStyleSheet(
+            INPUT_STYLE
         )
 
         self.password_input.returnPressed.connect(
             self.login
         )
 
-        layout.addStretch()
-        layout.addWidget(title)
-        layout.addWidget(self.username_input)
-        layout.addWidget(self.password_input)
-        layout.addWidget(login_button)
-        layout.addStretch()
+        main_layout.addWidget(
+            self.password_input
+        )
 
-        self.setLayout(layout)
+        # =====================================
+        # LOGIN BUTTON
+        # =====================================
+
+        login_button = QPushButton(
+            "Ingresar"
+        )
+
+        login_button.setMinimumHeight(
+            65
+        )
+
+        login_button.setStyleSheet(
+            BUTTON_STYLE
+        )
+
+        login_button.clicked.connect(
+            self.login
+        )
+
+        main_layout.addWidget(
+            login_button
+        )
+
+        self.setLayout(
+            main_layout
+        )
+
+    # =====================================
+    # LOGIN
+    # =====================================
 
     def login(self):
-        username = self.username_input.text()
-        password = self.password_input.text()
+
+        username = (
+            self.username_input.text()
+            .strip()
+        )
+
+        password = (
+            self.password_input.text()
+            .strip()
+        )
 
         db = SessionLocal()
 
@@ -89,15 +225,39 @@ class LoginWindow(QWidget):
 
         db.close()
 
-        if user:
-            self.dashboard = DashboardWindow(user)
-            self.dashboard.show()
+        if not user:
 
-            self.close()
-
-        else:
             QMessageBox.warning(
                 self,
                 "Error",
                 "Usuario o contraseña incorrectos"
             )
+
+            return
+
+        # =====================================
+        # GLOBAL SESSION
+        # =====================================
+
+        current_user["id"] = user.id
+
+        current_user["username"] = (
+            user.username
+        )
+
+        current_user["role"] = (
+            user.role
+        )
+
+        # =====================================
+        # OPEN MAIN WINDOW
+        # =====================================
+
+        self.main_window = MainWindow(
+            user.username,
+            user.role
+        )
+
+        self.main_window.show()
+
+        self.close()

@@ -1,71 +1,94 @@
-
 from PySide6.QtWidgets import (
     QWidget,
-    QPushButton,
-    QVBoxLayout,
     QHBoxLayout,
-    QFrame,
+    QVBoxLayout,
+    QPushButton,
     QLabel,
     QStackedWidget,
+    QMessageBox,
 )
-
-from PySide6.QtCore import Qt
 
 from app.assets.themes.theme import (
-    BACKGROUND_COLOR,
-    SIDEBAR_COLOR,
-    PRIMARY_COLOR,
-    TEXT_LIGHT,
-    TEXT_DARK,
+    SIDEBAR_STYLE,
 )
 
-from app.views.pages.dashboard_page import DashboardPage
 from app.views.pages.sales_page import SalesPage
-from app.views.pages.products_page import ProductsPage
+
+from app.views.pages.sales_detail_page import (
+    SalesDetailPage
+)
+
+from app.views.pages.products_page import (
+    ProductsPage
+)
+
+from app.views.pages.cash_register_page import (
+    CashRegisterPage
+)
+
+from app.views.pages.dashboard_page import (
+    DashboardPage
+)
+
+from app.views.pages.settings_page import (
+    SettingsPage
+)
 
 
 class DashboardWindow(QWidget):
-    def __init__(self, user):
+
+    def __init__(
+        self,
+        username="admin",
+        role="admin"
+    ):
         super().__init__()
 
-        self.user = user
+        self.username = username
+
+        self.role = role
 
         self.setWindowTitle("SARA POS")
-        self.resize(1400, 800)
 
-        self.setStyleSheet(f"""
-            QWidget {{
-                background-color: {BACKGROUND_COLOR};
-                color: {TEXT_DARK};
-                font-size: 14px;
-                font-family: Arial;
-            }}
-        """)
-
-        self.active_button = None
+        self.showMaximized()
 
         # =====================================
         # MAIN LAYOUT
         # =====================================
 
         main_layout = QHBoxLayout()
-        main_layout.setContentsMargins(0, 0, 0, 0)
+
+        main_layout.setContentsMargins(
+            0,
+            0,
+            0,
+            0
+        )
+
         main_layout.setSpacing(0)
 
         # =====================================
         # SIDEBAR
         # =====================================
 
-        sidebar = QFrame()
-        sidebar.setFixedWidth(240)
+        sidebar = QWidget()
 
-        sidebar.setStyleSheet(f"""
-            background-color: {SIDEBAR_COLOR};
-        """)
+        sidebar.setFixedWidth(260)
+
+        sidebar.setStyleSheet(
+            SIDEBAR_STYLE
+        )
 
         sidebar_layout = QVBoxLayout()
-        sidebar_layout.setContentsMargins(20, 25, 20, 25)
-        sidebar_layout.setSpacing(10)
+
+        sidebar_layout.setContentsMargins(
+            20,
+            30,
+            20,
+            30
+        )
+
+        sidebar_layout.setSpacing(15)
 
         # =====================================
         # LOGO
@@ -73,191 +96,284 @@ class DashboardWindow(QWidget):
 
         logo = QLabel("SARA POS")
 
-        logo.setAlignment(Qt.AlignCenter)
-
-        logo.setStyleSheet(f"""
-            color: {TEXT_LIGHT};
-            font-size: 30px;
+        logo.setStyleSheet("""
+            font-size: 34px;
             font-weight: bold;
+            color: white;
             margin-bottom: 30px;
         """)
 
         sidebar_layout.addWidget(logo)
 
         # =====================================
-        # STACKED PAGES
-        # =====================================
-
-        self.pages = QStackedWidget()
-
-        self.dashboard_page = DashboardPage()
-        self.sales_page = SalesPage()
-        self.products_page = ProductsPage()
-
-        self.pages.addWidget(self.dashboard_page)
-        self.pages.addWidget(self.sales_page)
-        self.pages.addWidget(self.products_page)
-
-        # =====================================
         # BUTTONS
         # =====================================
 
-        self.dashboard_btn = QPushButton("Dashboard")
-        self.sales_btn = QPushButton("Ventas")
-        self.products_btn = QPushButton("Productos")
+        self.sales_button = QPushButton(
+            "Ventas"
+        )
 
-        self.menu_buttons = [
-            self.dashboard_btn,
-            self.sales_btn,
-            self.products_btn,
+        self.sales_detail_button = QPushButton(
+            "Detalle Ventas"
+        )
+
+        self.products_button = QPushButton(
+            "Productos"
+        )
+
+        self.cash_button = QPushButton(
+            "Arqueo Caja"
+        )
+
+        self.dashboard_button = QPushButton(
+            "Dashboard"
+        )
+
+        self.settings_button = QPushButton(
+            "Configuración"
+        )
+
+        buttons = [
+            self.sales_button,
+            self.sales_detail_button,
+            self.products_button,
+            self.cash_button,
+            self.dashboard_button,
+            self.settings_button,
         ]
 
-        for button in self.menu_buttons:
+        for button in buttons:
 
-            button.setCursor(Qt.PointingHandCursor)
-            button.setMinimumHeight(45)
+            button.setMinimumHeight(55)
 
-            self.set_button_default_style(button)
+            button.setStyleSheet("""
+                QPushButton {
+                    background-color: transparent;
+                    color: white;
+                    border: none;
+                    text-align: left;
+                    padding-left: 20px;
+                    font-size: 17px;
+                    border-radius: 12px;
+                }
+
+                QPushButton:hover {
+                    background-color: rgba(255,255,255,0.08);
+                }
+            """)
 
             sidebar_layout.addWidget(button)
-
-        # =====================================
-        # BUTTON EVENTS
-        # =====================================
-
-        self.dashboard_btn.clicked.connect(
-            lambda: self.change_page(
-                self.dashboard_page,
-                self.dashboard_btn
-            )
-        )
-
-        self.sales_btn.clicked.connect(
-            lambda: self.change_page(
-                self.sales_page,
-                self.sales_btn
-            )
-        )
-
-        self.products_btn.clicked.connect(
-            lambda: self.change_page(
-                self.products_page,
-                self.products_btn
-            )
-        )
-
-        # DEFAULT ACTIVE BUTTON
-
-        self.change_page(
-            self.dashboard_page,
-            self.dashboard_btn
-        )
 
         sidebar_layout.addStretch()
 
         # =====================================
-        # USER CARD
+        # USER LABEL
         # =====================================
 
-        user_card = QFrame()
+        user_label = QLabel(
+            f"Usuario: {self.username}"
+        )
 
-        user_card.setStyleSheet("""
-            background-color: rgba(255,255,255,0.08);
-            border-radius: 14px;
-        """)
-
-        user_layout = QVBoxLayout()
-
-        username = QLabel(self.user.username)
-        username.setStyleSheet("""
-            color: white;
-            font-size: 15px;
-            font-weight: bold;
-        """)
-
-        role = QLabel(self.user.role)
-        role.setStyleSheet("""
+        user_label.setStyleSheet("""
             color: rgba(255,255,255,0.7);
-            font-size: 13px;
+            font-size: 14px;
+            margin-bottom: 10px;
         """)
 
-        user_layout.addWidget(username)
-        user_layout.addWidget(role)
+        sidebar_layout.addWidget(user_label)
 
-        user_card.setLayout(user_layout)
+        # =====================================
+        # LOGOUT BUTTON
+        # =====================================
 
-        sidebar_layout.addWidget(user_card)
+        logout_button = QPushButton(
+            "Cerrar sesión"
+        )
+
+        logout_button.setMinimumHeight(45)
+
+        logout_button.setStyleSheet("""
+            QPushButton {
+                background-color:
+                    rgba(255,255,255,0.08);
+
+                color: white;
+
+                border: none;
+
+                border-radius: 12px;
+
+                font-size: 15px;
+
+                font-weight: bold;
+            }
+
+            QPushButton:hover {
+                background-color:
+                    rgba(255,255,255,0.15);
+            }
+        """)
+
+        logout_button.clicked.connect(
+            self.logout
+        )
+
+        sidebar_layout.addWidget(
+            logout_button
+        )
 
         sidebar.setLayout(sidebar_layout)
 
         # =====================================
-        # CONTENT AREA
+        # STACK
         # =====================================
 
-        content = QFrame()
+        self.stack = QStackedWidget()
 
-        content_layout = QVBoxLayout()
-        content_layout.setContentsMargins(30, 30, 30, 30)
+        self.sales_page = SalesPage()
 
-        content_layout.addWidget(self.pages)
+        self.sales_detail_page = (
+            SalesDetailPage()
+        )
 
-        content.setLayout(content_layout)
+        self.products_page = ProductsPage()
+
+        self.cash_register_page = (
+            CashRegisterPage(self.username)
+        )
+
+        self.dashboard_page = DashboardPage()
+
+        self.settings_page = SettingsPage()
+
+        self.stack.addWidget(
+            self.sales_page
+        )
+
+        self.stack.addWidget(
+            self.sales_detail_page
+        )
+
+        self.stack.addWidget(
+            self.products_page
+        )
+
+        self.stack.addWidget(
+            self.cash_register_page
+        )
+
+        self.stack.addWidget(
+            self.dashboard_page
+        )
+
+        self.stack.addWidget(
+            self.settings_page
+        )
 
         # =====================================
-        # ADD TO MAIN LAYOUT
+        # BUTTON ACTIONS
+        # =====================================
+
+        self.sales_button.clicked.connect(
+            self.open_sales_page
+        )
+
+        self.sales_detail_button.clicked.connect(
+            lambda:
+            self.stack.setCurrentIndex(1)
+        )
+
+        self.products_button.clicked.connect(
+            lambda:
+            self.stack.setCurrentIndex(2)
+        )
+
+        self.cash_button.clicked.connect(
+            lambda:
+            self.stack.setCurrentIndex(3)
+        )
+
+        self.dashboard_button.clicked.connect(
+            self.open_dashboard
+        )
+
+        self.settings_button.clicked.connect(
+            self.open_settings
+        )
+
+        # =====================================
+        # ADD MAIN
         # =====================================
 
         main_layout.addWidget(sidebar)
-        main_layout.addWidget(content)
+
+        main_layout.addWidget(self.stack)
 
         self.setLayout(main_layout)
 
     # =====================================
-    # BUTTON STYLES
+    # OPEN SALES
     # =====================================
 
-    def set_button_default_style(self, button):
+    def open_sales_page(self):
 
-        button.setStyleSheet(f"""
-            QPushButton {{
-                background-color: transparent;
-                color: {TEXT_LIGHT};
-                border: none;
-                border-radius: 12px;
-                padding-left: 15px;
-                text-align: left;
-                font-size: 15px;
-            }}
+        self.sales_page.load_products()
 
-            QPushButton:hover {{
-                background-color: rgba(255,255,255,0.08);
-            }}
-        """)
+        self.sales_page.refresh_products_list()
 
-    def set_button_active_style(self, button):
-
-        button.setStyleSheet(f"""
-            QPushButton {{
-                background-color: {PRIMARY_COLOR};
-                color: white;
-                border: none;
-                border-radius: 12px;
-                padding-left: 15px;
-                text-align: left;
-                font-size: 15px;
-                font-weight: bold;
-            }}
-        """)
+        self.stack.setCurrentIndex(0)
 
     # =====================================
-    # CHANGE PAGE
+    # OPEN DASHBOARD
     # =====================================
 
-    def change_page(self, page, button):
+    def open_dashboard(self):
 
-        self.pages.setCurrentWidget(page)
+        self.stack.removeWidget(
+            self.dashboard_page
+        )
 
-        for btn in self.menu_buttons:
-            self.set_button_default_style(btn)
+        self.dashboard_page.deleteLater()
 
-        self.set_button_active_style(button)
+        self.dashboard_page = DashboardPage()
+
+        self.stack.insertWidget(
+            4,
+            self.dashboard_page
+        )
+
+        self.stack.setCurrentIndex(4)
+
+    # =====================================
+    # OPEN SETTINGS
+    # =====================================
+
+    def open_settings(self):
+
+        if self.role != "god":
+
+            QMessageBox.warning(
+                self,
+                "Acceso denegado",
+                "Solo GOD puede ingresar"
+            )
+
+            return
+
+        self.stack.setCurrentIndex(5)
+
+    # =====================================
+    # LOGOUT
+    # =====================================
+
+    def logout(self):
+
+        from app.views.login_window import (
+            LoginWindow
+        )
+
+        self.login = LoginWindow()
+
+        self.login.show()
+
+        self.close()
