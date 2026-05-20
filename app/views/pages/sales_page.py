@@ -1,30 +1,23 @@
-
 from PySide6.QtWidgets import (
     QWidget,
-    QLabel,
-    QPushButton,
     QVBoxLayout,
     QHBoxLayout,
-    QFrame,
+    QLabel,
     QListWidget,
     QListWidgetItem,
+    QPushButton,
     QLineEdit,
     QMessageBox,
+    QFrame
 )
 
 from PySide6.QtCore import Qt
 
-from app.assets.themes.theme import (
-    PRIMARY_COLOR,
-    BACKGROUND_COLOR,
-    INPUT_STYLE,
-    BUTTON_STYLE,
-)
-
 from app.database.database import SessionLocal
-
 from app.models.product_model import Product
 from app.models.cash_session_model import CashSession
+from app.models.ticket_model import Ticket
+from app.models.ticket_item_model import TicketItem
 
 
 class SalesPage(QWidget):
@@ -32,201 +25,241 @@ class SalesPage(QWidget):
     def __init__(self):
         super().__init__()
 
-        self.cart = {}
+        self.selected_cart_index = None
+        self.cart = []
 
-        self.setup_ui()
+        self.init_ui()
         self.load_products()
 
-    def setup_ui(self):
+    def init_ui(self):
 
-        self.setStyleSheet(f"""
-            background-color: {BACKGROUND_COLOR};
+        self.setStyleSheet("""
+
+            QWidget {
+                background-color: #F4F5F7;
+                color: #1E293B;
+                font-family: Arial;
+            }
+
+            QLabel#title {
+                font-size: 28px;
+                font-weight: bold;
+                color: #4A6A92;
+            }
+
+            QFrame {
+                background-color: white;
+                border-radius: 20px;
+            }
+
+            QListWidget {
+                border: none;
+                background: transparent;
+                font-size: 18px;
+                padding: 10px;
+            }
+
+            QListWidget::item {
+                padding: 18px;
+                border-radius: 10px;
+                margin-bottom: 10px;
+            }
+
+            QListWidget::item:selected {
+                background-color: #D8E6F5;
+                color: #1E293B;
+            }
+
+            QLineEdit {
+                background-color: white;
+                border: 2px solid #B8C4D0;
+                border-radius: 15px;
+                padding: 14px;
+                font-size: 18px;
+                color: #1E293B;
+            }
+
+            QPushButton {
+                border: none;
+                border-radius: 15px;
+                padding: 16px;
+                font-size: 18px;
+                font-weight: bold;
+                color: white;
+            }
+
         """)
 
-        main_layout = QVBoxLayout()
-        main_layout.setContentsMargins(18, 18, 18, 18)
-        main_layout.setSpacing(14)
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(15, 15, 15, 15)
 
         title = QLabel("Punto de Venta")
-        title.setStyleSheet(f"""
-            font-size: 28px;
-            font-weight: bold;
-            color: {PRIMARY_COLOR};
-        """)
+        title.setObjectName("title")
+
         main_layout.addWidget(title)
 
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("Buscar producto...")
-        self.search_input.setMinimumHeight(42)
-        self.search_input.setStyleSheet(INPUT_STYLE)
-        self.search_input.textChanged.connect(self.filter_products)
-        self.search_input.returnPressed.connect(self.add_selected_product)
+        self.search_input.returnPressed.connect(self.add_product_by_barcode)
 
         main_layout.addWidget(self.search_input)
 
         content_layout = QHBoxLayout()
-        content_layout.setSpacing(14)
 
-        products_frame = QFrame()
-        products_frame.setStyleSheet("""
-            background-color: white;
-            border-radius: 18px;
-        """)
+        # IZQUIERDA
+        left_frame = QFrame()
+        left_layout = QVBoxLayout(left_frame)
 
-        products_layout = QVBoxLayout()
-        products_layout.setContentsMargins(18, 18, 18, 18)
+        lbl_products = QLabel("Productos")
 
-        products_title = QLabel("Productos")
-        products_title.setStyleSheet("""
-            font-size: 18px;
+        lbl_products.setStyleSheet("""
+            font-size: 20px;
             font-weight: bold;
             color: #1E293B;
         """)
+
+        left_layout.addWidget(lbl_products)
 
         self.products_list = QListWidget()
-        self.products_list.setStyleSheet("""
-            QListWidget {
-                border: none;
-                background-color: transparent;
-                font-size: 16px;
-                color: #334155;
-                outline: none;
-            }
 
-            QListWidget::item {
-                padding: 14px;
-                border-radius: 10px;
-                margin-bottom: 4px;
-            }
+        self.products_list.itemDoubleClicked.connect(
+            self.add_product_to_cart
+        )
 
-            QListWidget::item:hover {
-                background-color: #F1F5F9;
-            }
+        left_layout.addWidget(self.products_list)
 
-            QListWidget::item:selected {
-                background-color: #DBEAFE;
-                color: #1E293B;
-                font-weight: bold;
-            }
-        """)
+        # DERECHA
+        right_frame = QFrame()
+        right_frame.setFixedWidth(420)
 
-        self.products_list.itemDoubleClicked.connect(self.add_to_cart)
+        right_layout = QVBoxLayout(right_frame)
 
-        products_layout.addWidget(products_title)
-        products_layout.addWidget(self.products_list)
+        lbl_cart = QLabel("Carrito")
 
-        products_frame.setLayout(products_layout)
-
-        cart_frame = QFrame()
-        cart_frame.setFixedWidth(340)
-        cart_frame.setStyleSheet("""
-            background-color: white;
-            border-radius: 18px;
-        """)
-
-        cart_layout = QVBoxLayout()
-        cart_layout.setContentsMargins(18, 18, 18, 18)
-
-        cart_title = QLabel("Carrito")
-        cart_title.setStyleSheet("""
-            font-size: 18px;
+        lbl_cart.setStyleSheet("""
+            font-size: 20px;
             font-weight: bold;
             color: #1E293B;
         """)
 
+        right_layout.addWidget(lbl_cart)
+
         self.cart_list = QListWidget()
-        self.cart_list.setStyleSheet("""
-            QListWidget {
-                border: none;
-                background-color: transparent;
-                font-size: 15px;
-                color: #334155;
-                outline: none;
-            }
 
-            QListWidget::item {
-                padding: 12px;
-                border-bottom: 1px solid #E2E8F0;
-            }
+        self.cart_list.itemClicked.connect(
+            self.select_cart_item
+        )
 
-            QListWidget::item:hover {
-                background-color: #F8FAFC;
-            }
+        right_layout.addWidget(self.cart_list)
 
-            QListWidget::item:selected {
-                background-color: #DBEAFE;
-                color: #1E293B;
-                font-weight: bold;
-                border-radius: 8px;
-            }
-        """)
+        self.delete_button = QPushButton(
+            "Eliminar seleccionado"
+        )
 
-        cart_layout.addWidget(cart_title)
-        cart_layout.addWidget(self.cart_list)
-
-        delete_button = QPushButton("Eliminar seleccionado")
-        delete_button.setMinimumHeight(48)
-        delete_button.setStyleSheet("""
+        self.delete_button.setStyleSheet("""
             QPushButton {
                 background-color: #FF003D;
-                color: white;
-                border: none;
-                border-radius: 12px;
-                font-size: 15px;
-                font-weight: bold;
             }
 
             QPushButton:hover {
-                background-color: #D90429;
+                background-color: #D9043A;
             }
         """)
-        delete_button.clicked.connect(self.remove_selected)
 
-        cart_layout.addWidget(delete_button)
+        self.delete_button.clicked.connect(
+            self.remove_selected_item
+        )
+
+        right_layout.addWidget(self.delete_button)
 
         total_frame = QFrame()
-        total_frame.setMinimumHeight(90)
-        total_frame.setStyleSheet("""
-            background-color: #F1F5F9;
-            border-radius: 16px;
-        """)
 
-        total_layout = QVBoxLayout()
+        total_layout = QVBoxLayout(total_frame)
 
         total_label = QLabel("TOTAL")
+
         total_label.setStyleSheet("""
             font-size: 14px;
             color: #64748B;
         """)
 
         self.total_value = QLabel("$ 0")
-        self.total_value.setStyleSheet(f"""
-            font-size: 30px;
-            font-weight: bold;
-            color: {PRIMARY_COLOR};
-        """)
+
         self.total_value.setAlignment(Qt.AlignCenter)
+
+        self.total_value.setStyleSheet("""
+            font-size: 28px;
+            font-weight: bold;
+            color: #4A6A92;
+        """)
 
         total_layout.addWidget(total_label)
         total_layout.addWidget(self.total_value)
 
-        total_frame.setLayout(total_layout)
-        cart_layout.addWidget(total_frame)
+        right_layout.addWidget(total_frame)
 
-        charge_button = QPushButton("COBRAR")
-        charge_button.setMinimumHeight(50)
-        charge_button.setStyleSheet(BUTTON_STYLE)
+        self.charge_button = QPushButton("COBRAR")
 
-        cart_layout.addWidget(charge_button)
+        self.charge_button.setStyleSheet("""
+            QPushButton {
+                background-color: #4A6A92;
+            }
 
-        cart_frame.setLayout(cart_layout)
+            QPushButton:hover {
+                background-color: #3D5A80;
+            }
+        """)
 
-        content_layout.addWidget(products_frame, 3)
-        content_layout.addWidget(cart_frame, 1)
+        self.charge_button.clicked.connect(
+            self.charge_sale
+        )
+
+        right_layout.addWidget(self.charge_button)
+
+        content_layout.addWidget(left_frame, 3)
+        content_layout.addWidget(right_frame, 1)
 
         main_layout.addLayout(content_layout)
 
-        self.setLayout(main_layout)
+    def show_message(self, title, message):
+
+        msg = QMessageBox(self)
+
+        msg.setWindowTitle(title)
+        msg.setText(message)
+
+        msg.setStyleSheet("""
+
+            QMessageBox {
+                background-color: white;
+            }
+
+            QLabel {
+                color: #1E293B;
+                font-size: 16px;
+                font-weight: bold;
+                min-width: 320px;
+            }
+
+            QPushButton {
+                background-color: #4A6A92;
+                color: white;
+                border: none;
+                border-radius: 10px;
+                padding: 10px 20px;
+                min-width: 90px;
+                min-height: 35px;
+                font-size: 14px;
+                font-weight: bold;
+            }
+
+            QPushButton:hover {
+                background-color: #3D5A80;
+            }
+
+        """)
+
+        msg.exec()
 
     def load_products(self):
 
@@ -234,127 +267,219 @@ class SalesPage(QWidget):
 
         db = SessionLocal()
 
-        self.products = db.query(Product).filter(
-            Product.is_active == True
-        ).all()
+        try:
 
-        db.close()
+            products = db.query(Product).filter(
+                Product.is_active == True
+            ).all()
 
-        for product in self.products:
+            for product in products:
 
-            item = QListWidgetItem(
-                f"{product.name}    $ {product.price}"
-            )
+                item_text = (
+                    f"{product.name}   $ {int(product.price)}"
+                )
 
-            item.setData(Qt.UserRole, product)
+                item = QListWidgetItem(item_text)
 
-            self.products_list.addItem(item)
+                item.setData(Qt.UserRole, product)
 
-        if self.products_list.count() > 0:
-            self.products_list.setCurrentRow(0)
+                self.products_list.addItem(item)
 
-    def filter_products(self):
+        finally:
+            db.close()
 
-        text = self.search_input.text().lower()
+    def add_product_to_cart(self, item):
 
-        visible_items = []
+        product = item.data(Qt.UserRole)
 
-        for i in range(self.products_list.count()):
+        for cart_item in self.cart:
 
-            item = self.products_list.item(i)
+            if cart_item["id"] == product.id:
 
-            visible = text in item.text().lower()
+                cart_item["quantity"] += 1
 
-            item.setHidden(not visible)
+                self.refresh_cart()
 
-            if visible:
-                visible_items.append(i)
+                return
 
-        if visible_items:
-            self.products_list.setCurrentRow(visible_items[0])
+        self.cart.append({
+            "id": product.id,
+            "name": product.name,
+            "price": float(product.price),
+            "quantity": 1
+        })
 
-    def add_selected_product(self):
+        self.refresh_cart()
 
-        current_item = self.products_list.currentItem()
+    def add_product_by_barcode(self):
 
-        if current_item:
-            self.add_to_cart(current_item)
+        barcode = self.search_input.text().strip()
 
-    def add_to_cart(self, item):
+        if not barcode:
+            return
 
         db = SessionLocal()
 
-        cash_session = db.query(CashSession).filter(
-            CashSession.is_open == True
-        ).first()
+        try:
 
-        db.close()
+            product = db.query(Product).filter(
+                Product.barcode == barcode,
+                Product.is_active == True
+            ).first()
 
-        if not cash_session:
+            if not product:
 
-            QMessageBox.warning(
-                self,
-                "Caja cerrada",
-                "Debe abrir una caja antes de vender"
-            )
+                self.show_message(
+                    "Error",
+                    "Producto no encontrado"
+                )
 
-            return
+                return
 
-        product = item.data(Qt.UserRole)
-        product_id = product.id
+            for cart_item in self.cart:
 
-        if product_id in self.cart:
-            self.cart[product_id]["quantity"] += 1
-        else:
-            self.cart[product_id] = {
-                "product": product,
+                if cart_item["id"] == product.id:
+
+                    cart_item["quantity"] += 1
+
+                    self.refresh_cart()
+
+                    self.search_input.clear()
+
+                    return
+
+            self.cart.append({
+                "id": product.id,
+                "name": product.name,
+                "price": float(product.price),
                 "quantity": 1
-            }
+            })
 
-        self.refresh_cart()
+            self.refresh_cart()
+
+            self.search_input.clear()
+
+        finally:
+            db.close()
 
     def refresh_cart(self):
 
         self.cart_list.clear()
 
-        for item_data in self.cart.values():
+        total = 0
 
-            product = item_data["product"]
-            quantity = item_data["quantity"]
-            subtotal = product.price * quantity
+        for item in self.cart:
 
-            self.cart_list.addItem(
-                f"{product.name} x{quantity}    $ {subtotal}"
+            subtotal = (
+                item["price"] * item["quantity"]
             )
 
-        self.update_total()
+            total += subtotal
 
-    def remove_selected(self):
+            text = (
+                f"{item['name']} x{item['quantity']}   "
+                f"$ {int(subtotal)}"
+            )
 
-        current_row = self.cart_list.currentRow()
+            list_item = QListWidgetItem(text)
 
-        if current_row < 0:
+            self.cart_list.addItem(list_item)
+
+        self.total_value.setText(f"$ {int(total)}")
+
+    def select_cart_item(self, item):
+
+        self.selected_cart_index = (
+            self.cart_list.row(item)
+        )
+
+    def remove_selected_item(self):
+
+        if self.selected_cart_index is None:
             return
 
-        keys = list(self.cart.keys())
-        product_id = keys[current_row]
+        item = self.cart[self.selected_cart_index]
 
-        self.cart[product_id]["quantity"] -= 1
+        if item["quantity"] > 1:
 
-        if self.cart[product_id]["quantity"] <= 0:
-            del self.cart[product_id]
+            item["quantity"] -= 1
+
+        else:
+
+            self.cart.pop(self.selected_cart_index)
+
+        self.selected_cart_index = None
 
         self.refresh_cart()
 
-    def update_total(self):
+    def charge_sale(self):
 
-        total = 0
+        if not self.cart:
 
-        for item_data in self.cart.values():
+            self.show_message(
+                "Error",
+                "Debe agregar productos"
+            )
 
-            product = item_data["product"]
-            quantity = item_data["quantity"]
+            return
 
-            total += product.price * quantity
+        db = SessionLocal()
 
-        self.total_value.setText(f"$ {total}")
+        try:
+
+            cash_session = db.query(CashSession).filter(
+                CashSession.is_open == True
+            ).first()
+
+            if not cash_session:
+
+                self.show_message(
+                    "Error",
+                    "Debe abrir una caja antes de vender"
+                )
+
+                return
+
+            total = sum(
+                item["price"] * item["quantity"]
+                for item in self.cart
+            )
+
+            ticket = Ticket(
+                total=total,
+                user_id=1,
+                cash_session_id=cash_session.id
+            )
+
+            db.add(ticket)
+
+            db.commit()
+
+            db.refresh(ticket)
+
+            for item in self.cart:
+
+                ticket_item = TicketItem(
+                    ticket_id=ticket.id,
+                    product_id=item["id"],
+                    quantity=item["quantity"],
+                    price=item["price"]
+                )
+
+                db.add(ticket_item)
+
+            cash_session.current_amount += total
+
+            db.commit()
+
+            self.show_message(
+                "OK",
+                "Venta realizada correctamente"
+            )
+
+            self.cart.clear()
+
+            self.refresh_cart()
+
+        finally:
+            db.close()

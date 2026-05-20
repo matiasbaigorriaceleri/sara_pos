@@ -1,4 +1,3 @@
-
 from PySide6.QtWidgets import (
     QWidget,
     QLabel,
@@ -11,10 +10,10 @@ from PySide6.QtWidgets import (
     QTableWidgetItem,
     QMessageBox,
     QHeaderView,
+    QFileDialog,
 )
 
 from app.database.database import SessionLocal
-
 from app.models.product_model import Product
 
 from app.assets.themes.theme import (
@@ -22,6 +21,8 @@ from app.assets.themes.theme import (
     BACKGROUND_COLOR,
     INPUT_STYLE,
 )
+
+import pandas as pd
 
 
 class ProductsPage(QWidget):
@@ -168,10 +169,11 @@ class ProductsPage(QWidget):
         form_layout.addLayout(row3)
 
         # =====================================================
-        # BOTONES
+        # BUTTONS
         # =====================================================
 
         buttons_layout = QHBoxLayout()
+
         buttons_layout.setSpacing(15)
 
         BUTTON_STYLE_BLUE = """
@@ -204,52 +206,30 @@ class ProductsPage(QWidget):
         }
         """
 
-        # =====================================================
-        # GUARDAR
-        # =====================================================
-
         self.save_button = QPushButton("Guardar")
         self.save_button.setFixedHeight(60)
         self.save_button.setStyleSheet(BUTTON_STYLE_BLUE)
         self.save_button.clicked.connect(self.save_product)
-
-        # =====================================================
-        # ACTUALIZAR
-        # =====================================================
 
         self.update_button = QPushButton("Actualizar")
         self.update_button.setFixedHeight(60)
         self.update_button.setStyleSheet(BUTTON_STYLE_BLUE)
         self.update_button.clicked.connect(self.update_product)
 
-        # =====================================================
-        # ELIMINAR
-        # =====================================================
-
         self.delete_button = QPushButton("Eliminar")
         self.delete_button.setFixedHeight(60)
         self.delete_button.setStyleSheet(BUTTON_STYLE_RED)
         self.delete_button.clicked.connect(self.delete_product)
 
-        # =====================================================
-        # IMPORTAR
-        # =====================================================
-
         self.import_button = QPushButton("Importar")
         self.import_button.setFixedHeight(60)
         self.import_button.setStyleSheet(BUTTON_STYLE_BLUE)
-
-        # =====================================================
-        # EXPORTAR
-        # =====================================================
+        self.import_button.clicked.connect(self.import_products)
 
         self.export_button = QPushButton("Exportar")
         self.export_button.setFixedHeight(60)
         self.export_button.setStyleSheet(BUTTON_STYLE_BLUE)
-
-        # =====================================================
-        # AGREGAR BOTONES
-        # =====================================================
+        self.export_button.clicked.connect(self.export_products)
 
         buttons_layout.addWidget(self.save_button)
         buttons_layout.addWidget(self.update_button)
@@ -327,30 +307,34 @@ class ProductsPage(QWidget):
         self.setLayout(main_layout)
 
     # =========================================================
-    # NEXT CODE
+    # GENERATE NEXT CODE
     # =========================================================
 
     def generate_next_code(self):
 
         db = SessionLocal()
 
-        last_product = db.query(Product).order_by(
-            Product.id.desc()
-        ).first()
+        products = db.query(Product).filter(
+            Product.is_active == True
+        ).all()
 
         db.close()
 
-        if last_product and last_product.product_code:
+        max_code = 0
 
-            next_number = int(
-                last_product.product_code
-            ) + 1
+        for product in products:
 
-        else:
+            try:
 
-            next_number = 1
+                current_code = int(product.product_code)
 
-        next_code = str(next_number).zfill(3)
+                if current_code > max_code:
+                    max_code = current_code
+
+            except:
+                pass
+
+        next_code = str(max_code + 1).zfill(3)
 
         self.code_input.setText(next_code)
 
@@ -418,9 +402,9 @@ class ProductsPage(QWidget):
 
     def save_product(self):
 
-        try:
+        db = SessionLocal()
 
-            db = SessionLocal()
+        try:
 
             name = self.name_input.text().strip().upper()
 
@@ -494,6 +478,8 @@ class ProductsPage(QWidget):
 
         except Exception as e:
 
+            db.rollback()
+
             self.show_message(
                 "Error",
                 str(e)
@@ -520,20 +506,26 @@ class ProductsPage(QWidget):
 
             return
 
+        product_code = self.table.item(
+            selected_row,
+            0
+        ).text()
+
+        db = SessionLocal()
+
         try:
-
-            db = SessionLocal()
-
-            product_code = self.table.item(
-                selected_row,
-                0
-            ).text()
 
             product = db.query(Product).filter(
                 Product.product_code == product_code
             ).first()
 
             if not product:
+
+                self.show_message(
+                    "Error",
+                    "Producto no encontrado"
+                )
+
                 return
 
             product.name = self.name_input.text().strip().upper()
@@ -571,6 +563,8 @@ class ProductsPage(QWidget):
 
         except Exception as e:
 
+            db.rollback()
+
             self.show_message(
                 "Error",
                 str(e)
@@ -589,30 +583,314 @@ class ProductsPage(QWidget):
         selected_row = self.table.currentRow()
 
         if selected_row < 0:
+
+            self.show_message(
+                "Error",
+                "Seleccione un producto"
+            )
+
             return
 
+        product_code = self.table.item(
+            selected_row,
+            0
+        ).text()
+
+        # =====================================================
+        # MODAL PERSONALIZADO
+        # =====================================================
+
+        msg = QMessageBox(self)
+
+        msg.setWindowTitle(
+            "Confirmar eliminación"
+        )
+
+        msg.setText(
+            "¿Seguro que desea eliminar este producto?"
+        )
+
+        msg.setIcon(QMessageBox.Question)
+
+        yes_button = msg.addButton(
+            "Sí",
+            QMessageBox.YesRole
+        )
+
+        no_button = msg.addButton(
+            "No",
+            QMessageBox.NoRole
+        )
+
+        msg.setStyleSheet("""
+
+            QMessageBox {
+                background-color: white;
+            }
+
+            QLabel {
+                color: #1E293B;
+                font-size: 16px;
+                font-weight: bold;
+                min-width: 320px;
+            }
+
+            QPushButton {
+                background-color: #4A6A92;
+                color: white;
+                border: none;
+                border-radius: 10px;
+                padding: 10px 20px;
+                min-width: 100px;
+                min-height: 36px;
+                font-size: 14px;
+                font-weight: bold;
+            }
+
+            QPushButton:hover {
+                background-color: #3D5A80;
+            }
+
+        """)
+
+        msg.exec()
+
+        if msg.clickedButton() != yes_button:
+            return
+
+        # =====================================================
+        # ELIMINAR PRODUCTO
+        # =====================================================
+
+        db = SessionLocal()
+
         try:
-
-            db = SessionLocal()
-
-            product_code = self.table.item(
-                selected_row,
-                0
-            ).text()
 
             product = db.query(Product).filter(
                 Product.product_code == product_code
             ).first()
 
-            if product:
+            if not product:
 
-                product.is_active = False
+                self.show_message(
+                    "Error",
+                    "Producto no encontrado"
+                )
 
-                db.commit()
+                return
+
+            product.is_active = False
+
+            db.commit()
+
+            self.show_message(
+                "OK",
+                "Producto eliminado correctamente"
+            )
 
             self.load_products()
 
             self.clear_form()
+
+        except Exception as e:
+
+            db.rollback()
+
+            self.show_message(
+                "Error",
+                str(e)
+            )
+
+        finally:
+
+            db.close()
+
+    # =========================================================
+    # IMPORT PRODUCTS
+    # =========================================================
+
+    def import_products(self):
+
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Seleccionar archivo",
+            "",
+            "Excel Files (*.xlsx *.xls)"
+        )
+
+        if not file_path:
+            return
+
+        db = SessionLocal()
+
+        try:
+
+            df = pd.read_excel(
+                file_path,
+                dtype=str
+            )
+
+            imported = 0
+
+            skipped = 0
+
+            for _, row in df.iterrows():
+
+                name = str(
+                    row.get("nombre", "")
+                ).strip().upper()
+
+                detail = str(
+                    row.get("detalle", "")
+                ).strip().upper()
+
+                barcode = str(
+                    row.get("barcode", "")
+                ).strip()
+
+                category = str(
+                    row.get("categoria", "")
+                ).strip().upper()
+
+                if not barcode.isdigit():
+
+                    skipped += 1
+
+                    continue
+
+                existing_name = db.query(Product).filter(
+                    Product.name == name
+                ).first()
+
+                existing_barcode = db.query(Product).filter(
+                    Product.barcode == barcode
+                ).first()
+
+                if existing_name or existing_barcode:
+
+                    skipped += 1
+
+                    continue
+
+                self.generate_next_code()
+
+                product = Product(
+
+                    product_code=self.code_input.text(),
+
+                    name=name,
+
+                    detail=detail,
+
+                    barcode=barcode,
+
+                    stock=int(row.get("stock", 0)),
+
+                    minimum_stock=int(
+                        row.get("stock_minimo", 0)
+                    ),
+
+                    price=float(
+                        row.get("precio_venta", 0)
+                    ),
+
+                    cost_price=float(
+                        row.get("precio_costo", 0)
+                    ),
+
+                    category=category,
+
+                    is_active=True
+                )
+
+                db.add(product)
+
+                db.commit()
+
+                imported += 1
+
+            self.load_products()
+
+            self.clear_form()
+
+            self.show_message(
+                "OK",
+                f"Importados: {imported} | Omitidos: {skipped}"
+            )
+
+        except Exception as e:
+
+            db.rollback()
+
+            self.show_message(
+                "Error",
+                str(e)
+            )
+
+        finally:
+
+            db.close()
+
+    # =========================================================
+    # EXPORT PRODUCTS
+    # =========================================================
+
+    def export_products(self):
+
+        db = SessionLocal()
+
+        try:
+
+            products = db.query(Product).filter(
+                Product.is_active == True
+            ).all()
+
+            data = []
+
+            for product in products:
+
+                data.append({
+
+                    "codigo": product.product_code,
+
+                    "nombre": product.name,
+
+                    "detalle": product.detail,
+
+                    "barcode": product.barcode,
+
+                    "stock": product.stock,
+
+                    "stock_minimo": product.minimum_stock,
+
+                    "precio_venta": product.price,
+
+                    "precio_costo": product.cost_price,
+
+                    "categoria": product.category,
+                })
+
+            df = pd.DataFrame(data)
+
+            file_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "Guardar archivo",
+                "productos_exportados.xlsx",
+                "Excel Files (*.xlsx)"
+            )
+
+            if not file_path:
+                return
+
+            df.to_excel(
+                file_path,
+                index=False
+            )
+
+            self.show_message(
+                "OK",
+                "Productos exportados correctamente"
+            )
 
         except Exception as e:
 
@@ -677,6 +955,8 @@ class ProductsPage(QWidget):
 
         self.category_input.clear()
 
+        self.generate_next_code()
+
     # =========================================================
     # SHOW MESSAGE
     # =========================================================
@@ -699,7 +979,7 @@ class ProductsPage(QWidget):
                 color: #1E293B;
                 font-size: 16px;
                 font-weight: bold;
-                min-width: 250px;
+                min-width: 300px;
             }
 
             QPushButton {
