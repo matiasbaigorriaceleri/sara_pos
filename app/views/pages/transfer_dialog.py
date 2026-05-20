@@ -5,6 +5,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QPushButton,
     QFrame,
+    QMessageBox,
 )
 
 from PySide6.QtCore import Qt
@@ -32,35 +33,47 @@ class TransferDialog(QDialog):
         self.payment_method = payment_method
 
         self.setWindowTitle("Datos de pago")
-        self.setFixedSize(480, 520)
+        self.setFixedWidth(440)
         self.setModal(True)
 
         self.setStyleSheet("""
             QDialog {
                 background-color: #F4F5F7;
             }
+            QLabel {
+                background-color: transparent;
+            }
             QLabel#title {
+                font-size: 18px;
+                font-weight: bold;
+                color: #1E293B;
+            }
+            QLabel#total_label {
+                font-size: 13px;
+                color: #64748B;
+            }
+            QLabel#total_value {
+                font-size: 38px;
+                font-weight: bold;
+                color: #4A6A92;
+            }
+            QLabel#alias_title {
+                font-size: 12px;
+                color: #64748B;
+                letter-spacing: 1px;
+            }
+            QLabel#alias_value {
                 font-size: 20px;
                 font-weight: bold;
                 color: #1E293B;
             }
-            QLabel#total {
-                font-size: 32px;
-                font-weight: bold;
-                color: #4A6A92;
-            }
-            QLabel#subtitle {
-                font-size: 14px;
-                color: #64748B;
-            }
-            QLabel#alias {
-                font-size: 18px;
-                font-weight: bold;
-                color: #1E293B;
+            QFrame#card {
                 background-color: white;
-                border: 2px solid #B8C4D0;
-                border-radius: 10px;
-                padding: 12px;
+                border-radius: 16px;
+            }
+            QFrame#divider {
+                background-color: #E2E8F0;
+                max-height: 1px;
             }
             QPushButton#print_btn {
                 background-color: #4A6A92;
@@ -76,13 +89,13 @@ class TransferDialog(QDialog):
             }
             QPushButton#cancel_btn {
                 background-color: transparent;
-                color: #64748B;
+                color: #94A3B8;
                 border: none;
-                font-size: 14px;
-                padding: 10px;
+                font-size: 13px;
+                padding: 8px;
             }
             QPushButton#cancel_btn:hover {
-                color: #FF003D;
+                color: #64748B;
             }
         """)
 
@@ -91,34 +104,49 @@ class TransferDialog(QDialog):
     def init_ui(self):
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(30, 24, 30, 20)
-        layout.setSpacing(14)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(12)
 
-        # ── Título ─────────────────────────────────────
+        # ── Card principal ────────────────────────────
+        card = QFrame()
+        card.setObjectName("card")
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(24, 24, 24, 24)
+        card_layout.setSpacing(0)
+
+        # Título
         title_text = "Transferencia bancaria" if self.payment_method == "transfer" else "QR Mercado Pago"
         title = QLabel(title_text)
         title.setObjectName("title")
         title.setAlignment(Qt.AlignCenter)
-        layout.addWidget(title)
+        card_layout.addWidget(title)
 
-        # ── Total ──────────────────────────────────────
-        subtitle = QLabel("Total a cobrar")
-        subtitle.setObjectName("subtitle")
-        subtitle.setAlignment(Qt.AlignCenter)
-        layout.addWidget(subtitle)
+        card_layout.addSpacing(16)
 
-        total_label = QLabel(f"$ {int(self.total)}")
-        total_label.setObjectName("total")
-        total_label.setAlignment(Qt.AlignCenter)
-        layout.addWidget(total_label)
+        # Total
+        total_lbl = QLabel("Total a cobrar")
+        total_lbl.setObjectName("total_label")
+        total_lbl.setAlignment(Qt.AlignCenter)
+        card_layout.addWidget(total_lbl)
 
-        # ── Separador ──────────────────────────────────
-        line = QFrame()
-        line.setFrameShape(QFrame.HLine)
-        line.setStyleSheet("color: #E2E8F0;")
-        layout.addWidget(line)
+        card_layout.addSpacing(4)
 
-        # ── Cargar datos de configuración ──────────────
+        total_val = QLabel(f"$ {int(self.total)}")
+        total_val.setObjectName("total_value")
+        total_val.setAlignment(Qt.AlignCenter)
+        card_layout.addWidget(total_val)
+
+        card_layout.addSpacing(20)
+
+        # Separador
+        div1 = QFrame()
+        div1.setObjectName("divider")
+        div1.setFixedHeight(1)
+        card_layout.addWidget(div1)
+
+        card_layout.addSpacing(20)
+
+        # Cargar configuración
         db = SessionLocal()
         try:
             alias = get_setting(db, "mp_alias", "")
@@ -126,46 +154,70 @@ class TransferDialog(QDialog):
         finally:
             db.close()
 
-        # ── Alias ──────────────────────────────────────
+        # Alias
         if alias:
-            alias_subtitle = QLabel("Alias / CBU")
-            alias_subtitle.setObjectName("subtitle")
-            alias_subtitle.setAlignment(Qt.AlignCenter)
-            layout.addWidget(alias_subtitle)
+            alias_title = QLabel("ALIAS / CBU")
+            alias_title.setObjectName("alias_title")
+            alias_title.setAlignment(Qt.AlignCenter)
+            card_layout.addWidget(alias_title)
 
-            alias_label = QLabel(alias)
-            alias_label.setObjectName("alias")
-            alias_label.setAlignment(Qt.AlignCenter)
-            layout.addWidget(alias_label)
+            card_layout.addSpacing(6)
 
-        # ── QR ─────────────────────────────────────────
+            alias_val = QLabel(alias)
+            alias_val.setObjectName("alias_value")
+            alias_val.setAlignment(Qt.AlignCenter)
+            card_layout.addWidget(alias_val)
+
+            card_layout.addSpacing(20)
+
+        # QR
         if qr_path and qr_path != "QR no configurado":
-            qr_label = QLabel()
-            qr_label.setAlignment(Qt.AlignCenter)
             pixmap = QPixmap(qr_path)
             if not pixmap.isNull():
+
+                # Separador antes del QR si hay alias
+                if alias:
+                    div2 = QFrame()
+                    div2.setObjectName("divider")
+                    div2.setFixedHeight(1)
+                    card_layout.addWidget(div2)
+                    card_layout.addSpacing(20)
+
+                qr_label = QLabel()
+                qr_label.setAlignment(Qt.AlignCenter)
                 pixmap = pixmap.scaled(
-                    180, 180,
+                    200, 200,
                     Qt.KeepAspectRatio,
                     Qt.SmoothTransformation
                 )
                 qr_label.setPixmap(pixmap)
-                layout.addWidget(qr_label)
+                card_layout.addWidget(qr_label)
+                card_layout.addSpacing(12)
 
-        # ── Botón imprimir ticket ──────────────────────
-        print_btn = QPushButton("🖨️  Imprimir ticket")
+                qr_hint = QLabel("Escaneá para pagar")
+                qr_hint.setObjectName("alias_title")
+                qr_hint.setAlignment(Qt.AlignCenter)
+                card_layout.addWidget(qr_hint)
+                card_layout.addSpacing(8)
+
+        layout.addWidget(card)
+
+        layout.addSpacing(4)
+
+        # ── Botón imprimir ────────────────────────────
+        print_btn = QPushButton("  Imprimir ticket")
         print_btn.setObjectName("print_btn")
         print_btn.setMinimumHeight(52)
-        print_btn.clicked.connect(self.print_ticket)
+        print_btn.clicked.connect(self.do_print_ticket)
         layout.addWidget(print_btn)
 
-        # ── Cerrar ─────────────────────────────────────
+        # ── Cerrar ────────────────────────────────────
         cancel_btn = QPushButton("Cerrar")
         cancel_btn.setObjectName("cancel_btn")
         cancel_btn.clicked.connect(self.accept)
         layout.addWidget(cancel_btn, alignment=Qt.AlignCenter)
 
-    def print_ticket(self):
+    def do_print_ticket(self):
 
         from app.printers.ticket_printer import print_ticket
 
@@ -176,17 +228,16 @@ class TransferDialog(QDialog):
             self.payment_method
         )
 
-        from PySide6.QtWidgets import QMessageBox
-        msg_box = QMessageBox(self)
-        msg_box.setWindowTitle("Imprimir")
-        msg_box.setText(msg if success else f"Error: {msg}")
-        msg_box.setStyleSheet("""
+        box = QMessageBox(self)
+        box.setWindowTitle("Imprimir")
+        box.setText("Ticket enviado a imprimir" if success else f"Error: {msg}")
+        box.setStyleSheet("""
             QMessageBox { background-color: white; }
             QLabel {
                 color: #1E293B;
                 font-size: 15px;
                 font-weight: bold;
-                min-width: 280px;
+                min-width: 260px;
             }
             QPushButton {
                 background-color: #4A6A92;
@@ -199,5 +250,6 @@ class TransferDialog(QDialog):
                 font-size: 13px;
                 font-weight: bold;
             }
+            QPushButton:hover { background-color: #3D5A80; }
         """)
-        msg_box.exec()
+        box.exec()

@@ -21,6 +21,7 @@ from app.models.ticket_model import Ticket
 from app.models.ticket_item_model import TicketItem
 from app.views.pages.payment_dialog import PaymentDialog
 from app.views.pages.transfer_dialog import TransferDialog
+from app.views.pages.budget_dialog import BudgetDialog
 from app.printers.ticket_printer import print_ticket
 
 
@@ -348,7 +349,6 @@ class SalesPage(QWidget):
         db = SessionLocal()
 
         try:
-            # Validar caja abierta
             cash_session = db.query(CashSession).filter(
                 CashSession.is_open == True
             ).first()
@@ -357,7 +357,6 @@ class SalesPage(QWidget):
                 self.show_message("Error", "Debe abrir una caja antes de vender")
                 return
 
-            # Validar stock
             for item in self.cart:
                 product = db.query(Product).filter(
                     Product.id == item["id"]
@@ -380,7 +379,7 @@ class SalesPage(QWidget):
         finally:
             db.close()
 
-        # ── Dialogo de método de pago ─────────────────
+        # ── Dialogo método de pago ────────────────────
         dialog = PaymentDialog(total, parent=self)
         result = dialog.exec()
 
@@ -389,7 +388,7 @@ class SalesPage(QWidget):
 
         payment_method = dialog.selected_method
 
-        # ── Registrar venta en base de datos ──────────
+        # ── Registrar venta ───────────────────────────
         db = SessionLocal()
 
         try:
@@ -438,10 +437,9 @@ class SalesPage(QWidget):
         finally:
             db.close()
 
-        # ── Flujo post-pago según método ──────────────
+        # ── Flujo post-pago ───────────────────────────
 
         if payment_method == "cash":
-            # Imprime automáticamente
             success, msg = print_ticket(
                 ticket_id,
                 cart_snapshot,
@@ -457,7 +455,6 @@ class SalesPage(QWidget):
                 )
 
         elif payment_method in ("transfer", "qr"):
-            # Abre ventana con QR/alias y botón imprimir manual
             transfer_dialog = TransferDialog(
                 total=total,
                 ticket_id=ticket_id,
@@ -468,11 +465,13 @@ class SalesPage(QWidget):
             transfer_dialog.exec()
 
         elif payment_method == "budget":
-            # TODO: ventana para enviar presupuesto por mail
-            self.show_message(
-                "Venta exitosa",
-                f"Venta N° {ticket_id:05d} registrada\nTotal: $ {int(total)}\n\nEnvío por mail próximamente."
+            budget_dialog = BudgetDialog(
+                total=total,
+                ticket_id=ticket_id,
+                cart=cart_snapshot,
+                parent=self
             )
+            budget_dialog.exec()
 
         self.cart.clear()
         self.refresh_cart()
