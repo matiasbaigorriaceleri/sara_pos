@@ -36,6 +36,11 @@ class Ticket(Base):
         Integer
     )
 
+    payment_method = Column(
+        String,
+        default="cash"
+    )
+
     created_at = Column(
         DateTime,
         default=datetime.now

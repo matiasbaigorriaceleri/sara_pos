@@ -8,7 +8,8 @@ from PySide6.QtWidgets import (
     QPushButton,
     QLineEdit,
     QMessageBox,
-    QFrame
+    QFrame,
+    QDialog
 )
 
 from PySide6.QtCore import Qt
@@ -18,6 +19,9 @@ from app.models.product_model import Product
 from app.models.cash_session_model import CashSession
 from app.models.ticket_model import Ticket
 from app.models.ticket_item_model import TicketItem
+from app.views.pages.payment_dialog import PaymentDialog
+from app.views.pages.transfer_dialog import TransferDialog
+from app.printers.ticket_printer import print_ticket
 
 
 class SalesPage(QWidget):
@@ -34,42 +38,35 @@ class SalesPage(QWidget):
     def init_ui(self):
 
         self.setStyleSheet("""
-
             QWidget {
                 background-color: #F4F5F7;
                 color: #1E293B;
                 font-family: Arial;
             }
-
             QLabel#title {
                 font-size: 28px;
                 font-weight: bold;
                 color: #4A6A92;
             }
-
             QFrame {
                 background-color: white;
                 border-radius: 20px;
             }
-
             QListWidget {
                 border: none;
                 background: transparent;
                 font-size: 18px;
                 padding: 10px;
             }
-
             QListWidget::item {
                 padding: 18px;
                 border-radius: 10px;
                 margin-bottom: 10px;
             }
-
             QListWidget::item:selected {
                 background-color: #D8E6F5;
                 color: #1E293B;
             }
-
             QLineEdit {
                 background-color: white;
                 border: 2px solid #B8C4D0;
@@ -78,7 +75,6 @@ class SalesPage(QWidget):
                 font-size: 18px;
                 color: #1E293B;
             }
-
             QPushButton {
                 border: none;
                 border-radius: 15px;
@@ -87,7 +83,6 @@ class SalesPage(QWidget):
                 font-weight: bold;
                 color: white;
             }
-
         """)
 
         main_layout = QVBoxLayout(self)
@@ -139,12 +134,8 @@ class SalesPage(QWidget):
 
         self.delete_button = QPushButton("Eliminar seleccionado")
         self.delete_button.setStyleSheet("""
-            QPushButton {
-                background-color: #FF003D;
-            }
-            QPushButton:hover {
-                background-color: #D9043A;
-            }
+            QPushButton { background-color: #FF003D; }
+            QPushButton:hover { background-color: #D9043A; }
         """)
         self.delete_button.clicked.connect(self.remove_selected_item)
         right_layout.addWidget(self.delete_button)
@@ -169,12 +160,8 @@ class SalesPage(QWidget):
 
         self.charge_button = QPushButton("COBRAR")
         self.charge_button.setStyleSheet("""
-            QPushButton {
-                background-color: #4A6A92;
-            }
-            QPushButton:hover {
-                background-color: #3D5A80;
-            }
+            QPushButton { background-color: #4A6A92; }
+            QPushButton:hover { background-color: #3D5A80; }
         """)
         self.charge_button.clicked.connect(self.charge_sale)
         right_layout.addWidget(self.charge_button)
@@ -189,9 +176,7 @@ class SalesPage(QWidget):
         msg.setWindowTitle(title)
         msg.setText(message)
         msg.setStyleSheet("""
-            QMessageBox {
-                background-color: white;
-            }
+            QMessageBox { background-color: white; }
             QLabel {
                 color: #1E293B;
                 font-size: 16px;
@@ -209,9 +194,7 @@ class SalesPage(QWidget):
                 font-size: 14px;
                 font-weight: bold;
             }
-            QPushButton:hover {
-                background-color: #3D5A80;
-            }
+            QPushButton:hover { background-color: #3D5A80; }
         """)
         msg.exec()
 
@@ -239,7 +222,6 @@ class SalesPage(QWidget):
 
         product = item.data(Qt.UserRole)
 
-        # Validar stock disponible
         db = SessionLocal()
         try:
             db_product = db.query(Product).filter(
@@ -250,7 +232,6 @@ class SalesPage(QWidget):
                 self.show_message("Sin stock", f"{product.name} no tiene stock disponible")
                 return
 
-            # Verificar si ya está en el carrito
             for cart_item in self.cart:
                 if cart_item["id"] == product.id:
                     if cart_item["quantity"] >= db_product.stock:
@@ -329,7 +310,6 @@ class SalesPage(QWidget):
     def refresh_cart(self):
 
         self.cart_list.clear()
-
         total = 0
 
         for item in self.cart:
@@ -342,7 +322,6 @@ class SalesPage(QWidget):
         self.total_value.setText(f"$ {int(total)}")
 
     def select_cart_item(self, item):
-
         self.selected_cart_index = self.cart_list.row(item)
 
     def remove_selected_item(self):
@@ -369,7 +348,6 @@ class SalesPage(QWidget):
         db = SessionLocal()
 
         try:
-
             # Validar caja abierta
             cash_session = db.query(CashSession).filter(
                 CashSession.is_open == True
@@ -379,7 +357,7 @@ class SalesPage(QWidget):
                 self.show_message("Error", "Debe abrir una caja antes de vender")
                 return
 
-            # Validar stock antes de cobrar
+            # Validar stock
             for item in self.cart:
                 product = db.query(Product).filter(
                     Product.id == item["id"]
@@ -394,25 +372,42 @@ class SalesPage(QWidget):
                     )
                     return
 
-            # Calcular total
             total = sum(
                 item["price"] * item["quantity"]
                 for item in self.cart
             )
 
-            # Crear ticket
+        finally:
+            db.close()
+
+        # ── Dialogo de método de pago ─────────────────
+        dialog = PaymentDialog(total, parent=self)
+        result = dialog.exec()
+
+        if result != QDialog.Accepted:
+            return
+
+        payment_method = dialog.selected_method
+
+        # ── Registrar venta en base de datos ──────────
+        db = SessionLocal()
+
+        try:
+            cash_session = db.query(CashSession).filter(
+                CashSession.is_open == True
+            ).first()
+
             ticket = Ticket(
                 total=total,
                 username=cash_session.username,
-                cash_session_id=cash_session.id
+                cash_session_id=cash_session.id,
+                payment_method=payment_method
             )
 
             db.add(ticket)
             db.flush()
 
-            # Crear items y descontar stock
             for item in self.cart:
-
                 subtotal = item["price"] * item["quantity"]
 
                 ticket_item = TicketItem(
@@ -425,27 +420,60 @@ class SalesPage(QWidget):
 
                 db.add(ticket_item)
 
-                # Descontar stock
                 product = db.query(Product).filter(
                     Product.id == item["id"]
                 ).first()
-
                 product.stock -= item["quantity"]
 
             db.commit()
 
-            self.show_message(
-                "Venta exitosa",
-                f"Venta registrada correctamente\nTotal: $ {int(total)}"
-            )
-
-            self.cart.clear()
-            self.refresh_cart()
-            self.load_products()
+            ticket_id = ticket.id
+            cart_snapshot = list(self.cart)
 
         except Exception as e:
             db.rollback()
             self.show_message("Error", f"Error al registrar venta: {str(e)}")
+            return
 
         finally:
             db.close()
+
+        # ── Flujo post-pago según método ──────────────
+
+        if payment_method == "cash":
+            # Imprime automáticamente
+            success, msg = print_ticket(
+                ticket_id,
+                cart_snapshot,
+                total,
+                payment_method
+            )
+            if not success:
+                self.show_message("Aviso", f"Venta registrada pero {msg}")
+            else:
+                self.show_message(
+                    "Venta exitosa",
+                    f"Venta N° {ticket_id:05d} registrada\nTotal: $ {int(total)}"
+                )
+
+        elif payment_method in ("transfer", "qr"):
+            # Abre ventana con QR/alias y botón imprimir manual
+            transfer_dialog = TransferDialog(
+                total=total,
+                ticket_id=ticket_id,
+                cart=cart_snapshot,
+                payment_method=payment_method,
+                parent=self
+            )
+            transfer_dialog.exec()
+
+        elif payment_method == "budget":
+            # TODO: ventana para enviar presupuesto por mail
+            self.show_message(
+                "Venta exitosa",
+                f"Venta N° {ticket_id:05d} registrada\nTotal: $ {int(total)}\n\nEnvío por mail próximamente."
+            )
+
+        self.cart.clear()
+        self.refresh_cart()
+        self.load_products()
