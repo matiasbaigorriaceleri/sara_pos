@@ -4,22 +4,17 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QHBoxLayout,
     QFrame,
-    QListWidget,
+    QScrollArea,
 )
 
-from app.assets.themes.theme import (
-    PRIMARY_COLOR,
-)
+from PySide6.QtCore import Qt
+from datetime import datetime
 
+from app.assets.themes.theme import PRIMARY_COLOR
 from app.database.database import SessionLocal
-
 from app.models.ticket_model import Ticket
-
 from app.models.product_model import Product
-
-from app.models.cash_session_model import (
-    CashSession
-)
+from app.models.cash_session_model import CashSession
 
 
 class DashboardPage(QWidget):
@@ -27,275 +22,264 @@ class DashboardPage(QWidget):
     def __init__(self):
         super().__init__()
 
-        main_layout = QVBoxLayout()
+        outer_layout = QVBoxLayout(self)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+        outer_layout.setSpacing(0)
 
-        main_layout.setSpacing(20)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("QScrollArea { border: none; background: #F4F5F7; }")
 
-        # =====================================
-        # TITLE
-        # =====================================
+        self.content = QWidget()
+        self.content.setStyleSheet("background: #F4F5F7;")
 
-        title = QLabel("Dashboard")
+        self.main_layout = QVBoxLayout(self.content)
+        self.main_layout.setContentsMargins(24, 24, 24, 24)
+        self.main_layout.setSpacing(20)
 
-        title.setStyleSheet(f"""
-            font-size: 34px;
-            font-weight: bold;
-            color: {PRIMARY_COLOR};
-        """)
+        scroll.setWidget(self.content)
+        outer_layout.addWidget(scroll)
 
-        main_layout.addWidget(title)
+        self.load_data()
 
-        # =====================================
-        # LOAD DATA
-        # =====================================
+    def load_data(self):
+
+        self.clear_layout(self.main_layout)
 
         db = SessionLocal()
 
-        tickets = db.query(Ticket).all()
+        try:
+            today = datetime.now().date()
+            start_of_day = datetime.combine(today, datetime.min.time())
 
-        products = db.query(Product).filter(
-            Product.is_active == True
-        ).all()
+            all_tickets = db.query(Ticket).all()
+            tickets_today = [
+                t for t in all_tickets
+                if t.created_at and t.created_at >= start_of_day
+            ]
 
-        cash_session = db.query(CashSession).filter(
-            CashSession.is_open == True
-        ).first()
+            products = db.query(Product).filter(Product.is_active == True).all()
+            cash_session = db.query(CashSession).filter(CashSession.is_open == True).first()
 
-        db.close()
+            total_sales_today = sum(t.total or 0 for t in tickets_today)
+            total_tickets_today = len(tickets_today)
+            total_products = len(products)
+            low_stock = [p for p in products if p.stock <= p.minimum_stock]
 
-        total_sales = sum(
-            ticket.total for ticket in tickets
-        )
-
-        total_tickets = len(tickets)
-
-        total_products = len(products)
-
-        low_stock = [
-            product
-            for product in products
-            if product.stock <= product.minimum_stock
-        ]
-
-        # =====================================
-        # CARDS
-        # =====================================
-
-        cards_layout = QHBoxLayout()
-
-        sales_card = self.create_card(
-            "Ventas Totales",
-            f"$ {total_sales}"
-        )
-
-        tickets_card = self.create_card(
-            "Tickets",
-            str(total_tickets)
-        )
-
-        products_card = self.create_card(
-            "Productos",
-            str(total_products)
-        )
-
-        if cash_session:
-
-            cash_text = (
-                f"$ {cash_session.opening_amount}"
-            )
-
-        else:
-
-            cash_text = "Caja cerrada"
-
-        cash_card = self.create_card(
-            "Caja Actual",
-            cash_text
-        )
-
-        cards_layout.addWidget(sales_card)
-
-        cards_layout.addWidget(tickets_card)
-
-        cards_layout.addWidget(products_card)
-
-        cards_layout.addWidget(cash_card)
-
-        main_layout.addLayout(cards_layout)
-
-        # =====================================
-        # BOTTOM SECTION
-        # =====================================
-
-        bottom_layout = QHBoxLayout()
-
-        # =====================================
-        # LAST SALES
-        # =====================================
-
-        sales_frame = QFrame()
-
-        sales_frame.setStyleSheet("""
-            background-color: white;
-            border-radius: 20px;
-        """)
-
-        sales_layout = QVBoxLayout()
-
-        sales_title = QLabel("Últimas ventas")
-
-        sales_title.setStyleSheet("""
-            font-size: 20px;
-            font-weight: bold;
-            color: #1E293B;
-        """)
-
-        sales_layout.addWidget(sales_title)
-
-        sales_list = QListWidget()
-
-        sales_list.setStyleSheet("""
-            QListWidget {
-                border: none;
-                background: transparent;
-                font-size: 16px;
-                color: #1E293B;
+            payment_labels = {
+                "cash": "Efectivo",
+                "transfer": "Transferencia",
+                "qr": "QR Mercado Pago",
+                "budget": "Presupuesto",
             }
 
-            QListWidget::item {
-                padding: 12px;
-                border-bottom: 1px solid #E5E7EB;
-            }
-        """)
+            method_totals = {}
+            for t in tickets_today:
+                method = payment_labels.get(t.payment_method, t.payment_method or "otro")
+                method_totals[method] = method_totals.get(method, 0) + (t.total or 0)
 
-        last_tickets = tickets[-10:]
+            last_tickets = sorted(
+                all_tickets,
+                key=lambda t: t.created_at or datetime.min,
+                reverse=True
+            )[:6]
 
-        last_tickets.reverse()
+        finally:
+            db.close()
 
-        for ticket in last_tickets:
-
-            sales_list.addItem(
-                f"{ticket.username} - "
-                f"$ {ticket.total}"
-            )
-
-        sales_layout.addWidget(sales_list)
-
-        sales_frame.setLayout(sales_layout)
-
-        # =====================================
-        # LOW STOCK
-        # =====================================
-
-        stock_frame = QFrame()
-
-        stock_frame.setStyleSheet("""
-            background-color: white;
-            border-radius: 20px;
-        """)
-
-        stock_layout = QVBoxLayout()
-
-        stock_title = QLabel(
-            "Productos bajo stock"
-        )
-
-        stock_title.setStyleSheet("""
-            font-size: 20px;
-            font-weight: bold;
-            color: #1E293B;
-        """)
-
-        stock_layout.addWidget(stock_title)
-
-        stock_list = QListWidget()
-
-        stock_list.setStyleSheet("""
-            QListWidget {
-                border: none;
-                background: transparent;
-                font-size: 16px;
-                color: #1E293B;
-            }
-
-            QListWidget::item {
-                padding: 12px;
-                border-bottom: 1px solid #E5E7EB;
-            }
-        """)
-
-        if low_stock:
-
-            for product in low_stock:
-
-                stock_list.addItem(
-                    f"{product.name} | "
-                    f"Stock: {product.stock}"
-                )
-
-        else:
-
-            stock_list.addItem(
-                "Sin alertas de stock"
-            )
-
-        stock_layout.addWidget(stock_list)
-
-        stock_frame.setLayout(stock_layout)
-
-        bottom_layout.addWidget(sales_frame)
-
-        bottom_layout.addWidget(stock_frame)
-
-        main_layout.addLayout(bottom_layout)
-
-        self.setLayout(main_layout)
-
-    # =====================================
-    # CREATE CARD
-    # =====================================
-
-    def create_card(self, title, value):
-
-        frame = QFrame()
-
-        frame.setMinimumHeight(160)
-
-        frame.setStyleSheet("""
-            background-color: white;
-            border-radius: 20px;
-        """)
-
-        layout = QVBoxLayout()
-
-        layout.setContentsMargins(
-            20,
-            20,
-            20,
-            20
-        )
-
-        title_label = QLabel(title)
-
-        title_label.setStyleSheet("""
-            font-size: 18px;
-            color: #64748B;
-        """)
-
-        value_label = QLabel(value)
-
-        value_label.setStyleSheet(f"""
-            font-size: 34px;
+        # ── Título ────────────────────────────────────
+        header_row = QHBoxLayout()
+        title = QLabel("Dashboard")
+        title.setStyleSheet(f"""
+            font-size: 28px;
             font-weight: bold;
             color: {PRIMARY_COLOR};
         """)
+        date_label = QLabel(datetime.now().strftime("%A %d de %B, %Y").capitalize())
+        date_label.setStyleSheet("font-size: 13px; color: #94A3B8;")
+        date_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        header_row.addWidget(title)
+        header_row.addWidget(date_label)
+        self.main_layout.addLayout(header_row)
 
-        layout.addWidget(title_label)
+        # ── Cards KPI ─────────────────────────────────
+        cards_row = QHBoxLayout()
+        cards_row.setSpacing(14)
 
-        layout.addStretch()
+        if cash_session:
+            cash_val = f"$ {int(cash_session.opening_amount)}"
+            cash_sub = "● Caja abierta"
+            cash_sub_color = "#22C55E"
+        else:
+            cash_val = "—"
+            cash_sub = "● Sin caja"
+            cash_sub_color = "#EF4444"
 
-        layout.addWidget(value_label)
+        cards_row.addWidget(self.kpi_card("Ventas hoy", f"$ {int(total_sales_today)}", f"{total_tickets_today} tickets", "#4A6A92"))
+        cards_row.addWidget(self.kpi_card("Tickets hoy", str(total_tickets_today), "transacciones", "#0F6E56"))
+        cards_row.addWidget(self.kpi_card("Productos", str(total_products), f"{len(low_stock)} con stock bajo", "#854F0B" if low_stock else "#0F6E56"))
+        cards_row.addWidget(self.kpi_card("Caja actual", cash_val, cash_sub, cash_sub_color if cash_session else "#EF4444"))
+        self.main_layout.addLayout(cards_row)
 
-        frame.setLayout(layout)
+        # ── Fila inferior ─────────────────────────────
+        bottom_row = QHBoxLayout()
+        bottom_row.setSpacing(14)
+
+        # Últimas ventas
+        sales_card = self.section_card("Últimas ventas")
+        sales_inner = sales_card.findChild(QVBoxLayout)
+
+        if last_tickets:
+            for ticket in last_tickets:
+                method = payment_labels.get(ticket.payment_method, ticket.payment_method or "")
+                fecha = ticket.created_at.strftime("%d/%m %H:%M") if ticket.created_at else ""
+                row = self.list_row(
+                    f"#{ticket.id:05d}  ·  {fecha}",
+                    f"$ {int(ticket.total or 0)}",
+                    method
+                )
+                sales_inner.addWidget(row)
+        else:
+            empty = QLabel("Sin ventas registradas")
+            empty.setStyleSheet("color: #94A3B8; font-size: 13px; padding: 8px 0;")
+            sales_inner.addWidget(empty)
+
+        sales_inner.addStretch()
+        bottom_row.addWidget(sales_card, 3)
+
+        # Métodos de pago
+        methods_card = self.section_card("Por método hoy")
+        methods_inner = methods_card.findChild(QVBoxLayout)
+
+        if method_totals:
+            for method, total in method_totals.items():
+                row = self.list_row(method, f"$ {int(total)}")
+                methods_inner.addWidget(row)
+        else:
+            empty = QLabel("Sin ventas hoy")
+            empty.setStyleSheet("color: #94A3B8; font-size: 13px; padding: 8px 0;")
+            methods_inner.addWidget(empty)
+
+        methods_inner.addStretch()
+        bottom_row.addWidget(methods_card, 2)
+
+        # Stock bajo
+        stock_card = self.section_card("Stock bajo")
+        stock_inner = stock_card.findChild(QVBoxLayout)
+
+        if low_stock:
+            for product in low_stock[:6]:
+                row = self.list_row(
+                    product.name,
+                    f"{int(product.stock)} uds",
+                    f"mín {int(product.minimum_stock)}",
+                    value_color="#EF4444"
+                )
+                stock_inner.addWidget(row)
+        else:
+            empty = QLabel("Todo el stock en orden")
+            empty.setStyleSheet("color: #22C55E; font-size: 13px; padding: 8px 0;")
+            stock_inner.addWidget(empty)
+
+        stock_inner.addStretch()
+        bottom_row.addWidget(stock_card, 2)
+
+        self.main_layout.addLayout(bottom_row)
+        self.main_layout.addStretch()
+
+    def kpi_card(self, title, value, subtitle, accent_color="#4A6A92"):
+
+        frame = QFrame()
+        frame.setMinimumHeight(110)
+        frame.setStyleSheet("""
+            QFrame {
+                background-color: white;
+                border-radius: 14px;
+            }
+        """)
+
+        layout = QVBoxLayout(frame)
+        layout.setContentsMargins(18, 16, 18, 16)
+        layout.setSpacing(4)
+
+        lbl_title = QLabel(title)
+        lbl_title.setStyleSheet("font-size: 12px; color: #94A3B8; font-weight: bold; letter-spacing: 1px;")
+        layout.addWidget(lbl_title)
+
+        lbl_value = QLabel(value)
+        lbl_value.setStyleSheet(f"font-size: 28px; font-weight: bold; color: #1E293B;")
+        layout.addWidget(lbl_value)
+
+        lbl_sub = QLabel(subtitle)
+        lbl_sub.setStyleSheet(f"font-size: 12px; color: {accent_color}; font-weight: bold;")
+        layout.addWidget(lbl_sub)
 
         return frame
+
+    def section_card(self, title):
+
+        frame = QFrame()
+        frame.setStyleSheet("""
+            QFrame {
+                background-color: white;
+                border-radius: 14px;
+            }
+        """)
+
+        layout = QVBoxLayout(frame)
+        layout.setContentsMargins(18, 16, 18, 16)
+        layout.setSpacing(8)
+
+        lbl_title = QLabel(title)
+        lbl_title.setStyleSheet("font-size: 12px; color: #94A3B8; font-weight: bold; letter-spacing: 1px;")
+        layout.addWidget(lbl_title)
+
+        sep = QFrame()
+        sep.setFrameShape(QFrame.HLine)
+        sep.setStyleSheet("color: #F1F5F9; margin: 2px 0;")
+        layout.addWidget(sep)
+
+        return frame
+
+    def list_row(self, label, value, subtitle="", value_color="#1E293B"):
+
+        row_widget = QWidget()
+        row_widget.setStyleSheet("""
+            QWidget {
+                border-bottom: 1px solid #F8FAFC;
+                background: transparent;
+            }
+        """)
+        row_layout = QHBoxLayout(row_widget)
+        row_layout.setContentsMargins(0, 6, 0, 6)
+        row_layout.setSpacing(8)
+
+        left = QVBoxLayout()
+        left.setSpacing(1)
+
+        lbl = QLabel(label)
+        lbl.setStyleSheet("font-size: 13px; color: #1E293B; font-weight: bold; background: transparent; border: none;")
+        left.addWidget(lbl)
+
+        if subtitle:
+            sub = QLabel(subtitle)
+            sub.setStyleSheet("font-size: 11px; color: #94A3B8; background: transparent; border: none;")
+            left.addWidget(sub)
+
+        val = QLabel(value)
+        val.setStyleSheet(f"font-size: 14px; font-weight: bold; color: {value_color}; background: transparent; border: none;")
+        val.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+
+        row_layout.addLayout(left)
+        row_layout.addWidget(val)
+
+        return row_widget
+
+    def clear_layout(self, layout):
+        while layout.count():
+            item = layout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
+            elif item.layout():
+                self.clear_layout(item.layout())

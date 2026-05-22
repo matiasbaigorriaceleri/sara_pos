@@ -10,21 +10,21 @@ from app.database.database import (
 
 from app.models.user_model import User
 from app.models.product_model import Product
+from app.models.ticket_model import Ticket
+from app.models.ticket_item_model import TicketItem
+from app.models.cash_session_model import CashSession
+from app.models.settings_model import Setting
+from app.models.supplier_model import Supplier
+from app.models.client_model import Client
+from app.models.supplier_invoice_model import SupplierInvoice
+from app.models.client_account_model import ClientAccount
 
 from app.views.login_window import LoginWindow
 
-
-# =========================================================
-# CREATE TABLES
-# =========================================================
-
+# ── Crear tablas ──────────────────────────────────────
 Base.metadata.create_all(bind=engine)
 
-
-# =========================================================
-# CREATE ADMIN USER
-# =========================================================
-
+# ── Crear usuario admin por defecto ───────────────────
 db = SessionLocal()
 
 admin_user = db.query(User).filter(
@@ -32,29 +32,19 @@ admin_user = db.query(User).filter(
 ).first()
 
 if not admin_user:
-
     user = User(
         username="admin",
         password="admin",
         role="ADMIN",
         is_active=True
     )
-
     db.add(user)
-
     db.commit()
 
 db.close()
 
-
-# =========================================================
-# START APP
-# =========================================================
-
+# ── Iniciar app ───────────────────────────────────────
 app = QApplication(sys.argv)
-
 window = LoginWindow()
-
 window.show()
-
 sys.exit(app.exec())

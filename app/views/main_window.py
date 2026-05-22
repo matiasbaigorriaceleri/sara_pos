@@ -8,21 +8,8 @@ from PySide6.QtWidgets import (
     QStackedWidget,
 )
 
-from PySide6.QtGui import (
-    QGuiApplication
-)
-
-from app.assets.themes.theme import (
-    PRIMARY_COLOR,
-    BACKGROUND_COLOR,
-)
-
-from app.views.pages.sales_page import SalesPage
-from app.views.pages.sales_detail_page import SalesDetailPage
-from app.views.pages.products_page import ProductsPage
-from app.views.pages.cash_register_page import CashRegisterPage
-from app.views.pages.dashboard_page import DashboardPage
-from app.views.pages.settings_page import SettingsPage
+from PySide6.QtGui import QGuiApplication
+from app.assets.themes.theme import PRIMARY_COLOR, BACKGROUND_COLOR
 
 
 class MainWindow(QMainWindow):
@@ -32,6 +19,7 @@ class MainWindow(QMainWindow):
 
         self.username = username
         self.role = role
+        self._pages_loaded = {}
 
         self.setWindowTitle("SARA POS")
 
@@ -53,7 +41,6 @@ class MainWindow(QMainWindow):
             height = 700
 
         self.resize(width, height)
-
         x = (screen_width - width) // 2
         y = (screen_height - height) // 2
         self.move(x, y)
@@ -63,9 +50,7 @@ class MainWindow(QMainWindow):
     def setup_ui(self):
 
         central_widget = QWidget()
-        central_widget.setStyleSheet(f"""
-            background-color: {BACKGROUND_COLOR};
-        """)
+        central_widget.setStyleSheet(f"background-color: {BACKGROUND_COLOR};")
         self.setCentralWidget(central_widget)
 
         main_layout = QHBoxLayout()
@@ -73,82 +58,73 @@ class MainWindow(QMainWindow):
         main_layout.setSpacing(0)
         central_widget.setLayout(main_layout)
 
-        # ── Sidebar ──────────────────────────────────
+        # ── Sidebar ───────────────────────────────────
         sidebar = QWidget()
         sidebar.setFixedWidth(210)
         sidebar.setStyleSheet("background-color: #243B53;")
 
         sidebar_layout = QVBoxLayout()
         sidebar_layout.setContentsMargins(15, 22, 15, 20)
-        sidebar_layout.setSpacing(10)
+        sidebar_layout.setSpacing(6)
 
         logo = QLabel("SARA POS")
         logo.setStyleSheet("""
             font-size: 22px;
             font-weight: bold;
             color: white;
-            margin-bottom: 25px;
+            margin-bottom: 20px;
         """)
         sidebar_layout.addWidget(logo)
 
         # ── Pages ─────────────────────────────────────
         self.pages = QStackedWidget()
-        self.pages.setStyleSheet(f"""
-            background-color: {BACKGROUND_COLOR};
-        """)
+        self.pages.setStyleSheet(f"background-color: {BACKGROUND_COLOR};")
 
-        self.sales_page = SalesPage()
-        self.sales_detail_page = SalesDetailPage()
-        self.products_page = ProductsPage()
-        self.cash_register_page = CashRegisterPage(self.username)
-        self.dashboard_page = DashboardPage()
-        self.settings_page = SettingsPage()
+        # Páginas vacías placeholder
+        for i in range(8):
+            placeholder = QWidget()
+            self.pages.addWidget(placeholder)
 
-        self.pages.addWidget(self.sales_page)
-        self.pages.addWidget(self.sales_detail_page)
-        self.pages.addWidget(self.products_page)
-        self.pages.addWidget(self.cash_register_page)
-        self.pages.addWidget(self.dashboard_page)
-        self.pages.addWidget(self.settings_page)
+        # ── Botones menú ──────────────────────────────
+        sales_btn = self.create_menu_button("Ventas")
+        sales_btn.clicked.connect(lambda: self.navigate_to(0))
+        sidebar_layout.addWidget(sales_btn)
 
-        # ── Menu buttons ──────────────────────────────
-        sales_button = self.create_menu_button("Ventas")
-        sales_button.clicked.connect(self.go_to_sales)
-        sidebar_layout.addWidget(sales_button)
+        detail_btn = self.create_menu_button("Detalle Ventas")
+        detail_btn.clicked.connect(lambda: self.navigate_to(1))
+        sidebar_layout.addWidget(detail_btn)
 
-        detail_button = self.create_menu_button("Detalle Ventas")
-        detail_button.clicked.connect(self.go_to_sales_detail)
-        sidebar_layout.addWidget(detail_button)
+        products_btn = self.create_menu_button("Productos")
+        products_btn.clicked.connect(lambda: self.navigate_to(2))
+        sidebar_layout.addWidget(products_btn)
 
-        products_button = self.create_menu_button("Productos")
-        products_button.clicked.connect(self.go_to_products)
-        sidebar_layout.addWidget(products_button)
+        cash_btn = self.create_menu_button("Arqueo Caja")
+        cash_btn.clicked.connect(lambda: self.navigate_to(3))
+        sidebar_layout.addWidget(cash_btn)
 
-        cash_button = self.create_menu_button("Arqueo Caja")
-        cash_button.clicked.connect(self.go_to_cash)
-        sidebar_layout.addWidget(cash_button)
+        dashboard_btn = self.create_menu_button("Dashboard")
+        dashboard_btn.clicked.connect(lambda: self.navigate_to(4))
+        sidebar_layout.addWidget(dashboard_btn)
 
-        dashboard_button = self.create_menu_button("Dashboard")
-        dashboard_button.clicked.connect(self.go_to_dashboard)
-        sidebar_layout.addWidget(dashboard_button)
+        suppliers_btn = self.create_menu_button("Proveedores")
+        suppliers_btn.clicked.connect(lambda: self.navigate_to(5))
+        sidebar_layout.addWidget(suppliers_btn)
+
+        clients_btn = self.create_menu_button("Clientes")
+        clients_btn.clicked.connect(lambda: self.navigate_to(6))
+        sidebar_layout.addWidget(clients_btn)
 
         if self.role.upper() == "GOD":
-            settings_button = self.create_menu_button("Configuración")
-            settings_button.clicked.connect(self.go_to_settings)
-            sidebar_layout.addWidget(settings_button)
+            settings_btn = self.create_menu_button("Configuración")
+            settings_btn.clicked.connect(lambda: self.navigate_to(7))
+            sidebar_layout.addWidget(settings_btn)
 
         sidebar_layout.addStretch()
 
-        # ── Usuario ───────────────────────────────────
         user_label = QLabel(f"Usuario: {self.username}")
-        user_label.setStyleSheet("""
-            color: #E5E7EB;
-            font-size: 13px;
-            margin-bottom: 6px;
-        """)
+        user_label.setStyleSheet("color: #E5E7EB; font-size: 13px; margin-bottom: 6px;")
         sidebar_layout.addWidget(user_label)
 
-        # ── Logout ────────────────────────────────────
         logout_button = QPushButton("Cerrar sesión")
         logout_button.setMinimumHeight(40)
         logout_button.setStyleSheet("""
@@ -160,50 +136,76 @@ class MainWindow(QMainWindow):
                 font-size: 14px;
                 font-weight: bold;
             }
-            QPushButton:hover {
-                background-color: #4F76A1;
-            }
+            QPushButton:hover { background-color: #4F76A1; }
         """)
         logout_button.clicked.connect(self.logout)
         sidebar_layout.addWidget(logout_button)
 
         sidebar.setLayout(sidebar_layout)
-
         main_layout.addWidget(sidebar)
         main_layout.addWidget(self.pages)
 
-        self.pages.setCurrentIndex(0)
+        # Cargar solo la primera página al inicio
+        self.navigate_to(0)
 
-    # ── Navegación con refresco ───────────────────────
+    def navigate_to(self, index):
 
-    def go_to_sales(self):
-        self.sales_page.load_products()
-        self.pages.setCurrentIndex(0)
+        if index not in self._pages_loaded:
+            page = self.load_page(index)
+            if page:
+                self.pages.removeWidget(self.pages.widget(index))
+                self.pages.insertWidget(index, page)
+                self._pages_loaded[index] = page
+        else:
+            page = self._pages_loaded[index]
+            if hasattr(page, 'load_products'):
+                page.load_products()
+            elif hasattr(page, 'load_sales'):
+                page.load_sales()
+            elif hasattr(page, 'load_data'):
+                page.load_data()
+            elif hasattr(page, 'load_suppliers'):
+                page.load_suppliers()
+            elif hasattr(page, 'load_clients'):
+                page.load_clients()
 
-    def go_to_sales_detail(self):
-        if hasattr(self.sales_detail_page, 'load_sales'):
-            self.sales_detail_page.load_sales()
-        self.pages.setCurrentIndex(1)
+        self.pages.setCurrentIndex(index)
 
-    def go_to_products(self):
-        if hasattr(self.products_page, 'load_products'):
-            self.products_page.load_products()
-        self.pages.setCurrentIndex(2)
+    def load_page(self, index):
 
-    def go_to_cash(self):
-        if hasattr(self.cash_register_page, 'load_status'):
-            self.cash_register_page.load_status()
-        self.pages.setCurrentIndex(3)
+        if index == 0:
+            from app.views.pages.sales_page import SalesPage
+            return SalesPage()
 
-    def go_to_dashboard(self):
-        if hasattr(self.dashboard_page, 'load_data'):
-            self.dashboard_page.load_data()
-        self.pages.setCurrentIndex(4)
+        elif index == 1:
+            from app.views.pages.sales_detail_page import SalesDetailPage
+            return SalesDetailPage()
 
-    def go_to_settings(self):
-        self.pages.setCurrentIndex(5)
+        elif index == 2:
+            from app.views.pages.products_page import ProductsPage
+            return ProductsPage()
 
-    # ── Crear botón menú ──────────────────────────────
+        elif index == 3:
+            from app.views.pages.cash_register_page import CashRegisterPage
+            return CashRegisterPage(self.username)
+
+        elif index == 4:
+            from app.views.pages.dashboard_page import DashboardPage
+            return DashboardPage()
+
+        elif index == 5:
+            from app.views.pages.suppliers_page import SuppliersPage
+            return SuppliersPage()
+
+        elif index == 6:
+            from app.views.pages.clients_page import ClientsPage
+            return ClientsPage()
+
+        elif index == 7:
+            from app.views.pages.settings_page import SettingsPage
+            return SettingsPage()
+
+        return None
 
     def create_menu_button(self, text):
 
@@ -220,16 +222,11 @@ class MainWindow(QMainWindow):
                 text-align: left;
                 padding-left: 16px;
             }
-            QPushButton:hover {
-                background-color: #3E5C76;
-            }
+            QPushButton:hover { background-color: #3E5C76; }
         """)
         return button
 
-    # ── Logout ────────────────────────────────────────
-
     def logout(self):
-
         from app.views.login_window import LoginWindow
         self.login_window = LoginWindow()
         self.login_window.show()
