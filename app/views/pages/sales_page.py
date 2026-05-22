@@ -9,16 +9,18 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QFrame,
-    QDialog
+    QDialog,
+    QCompleter,
 )
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QStringListModel
 
 from app.database.database import SessionLocal
 from app.models.product_model import Product
 from app.models.cash_session_model import CashSession
 from app.models.ticket_model import Ticket
 from app.models.ticket_item_model import TicketItem
+from app.models.client_model import Client
 from app.views.pages.payment_dialog import PaymentDialog
 from app.views.pages.transfer_dialog import TransferDialog
 from app.views.pages.budget_dialog import BudgetDialog
@@ -31,6 +33,8 @@ class SalesPage(QWidget):
         super().__init__()
         self.selected_cart_index = None
         self.cart = []
+        self.current_client = None  # None = Consumidor Final
+        self.current_discount = 0.0
         self.init_ui()
         self.load_products()
 
@@ -86,15 +90,84 @@ class SalesPage(QWidget):
 
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(15, 15, 15, 15)
+        main_layout.setSpacing(10)
 
         title = QLabel("Punto de Venta")
         title.setObjectName("title")
         main_layout.addWidget(title)
 
+        # ── Buscador de productos ─────────────────────
         self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("Buscar producto...")
+        self.search_input.setPlaceholderText("Buscar producto por nombre o barcode...")
         self.search_input.returnPressed.connect(self.add_product_by_barcode)
         main_layout.addWidget(self.search_input)
+
+        # ── Selector de cliente ───────────────────────
+        client_row = QHBoxLayout()
+        client_row.setSpacing(10)
+
+        self.client_input = QLineEdit()
+        self.client_input.setPlaceholderText("Cliente (dejar vacío = Consumidor Final)")
+        self.client_input.setStyleSheet("""
+            QLineEdit {
+                background-color: white;
+                border: 2px solid #B8C4D0;
+                border-radius: 15px;
+                padding: 12px 16px;
+                font-size: 15px;
+                color: #1E293B;
+            }
+            QLineEdit:focus { border: 2px solid #4A6A92; }
+        """)
+        self.client_input.textChanged.connect(self.on_client_input_changed)
+        self.client_input.returnPressed.connect(self.search_client)
+
+        btn_search_client = QPushButton("Buscar cliente")
+        btn_search_client.setFixedHeight(48)
+        btn_search_client.setStyleSheet("""
+            QPushButton {
+                background-color: #4A6A92;
+                color: white;
+                border: none;
+                border-radius: 12px;
+                font-size: 14px;
+                font-weight: bold;
+                padding: 8px 16px;
+            }
+            QPushButton:hover { background-color: #3D5A80; }
+        """)
+        btn_search_client.clicked.connect(self.search_client)
+
+        btn_clear_client = QPushButton("Consumidor Final")
+        btn_clear_client.setFixedHeight(48)
+        btn_clear_client.setStyleSheet("""
+            QPushButton {
+                background-color: #64748B;
+                color: white;
+                border: none;
+                border-radius: 12px;
+                font-size: 14px;
+                font-weight: bold;
+                padding: 8px 16px;
+            }
+            QPushButton:hover { background-color: #475569; }
+        """)
+        btn_clear_client.clicked.connect(self.clear_client)
+
+        self.client_info_label = QLabel("Cliente: Consumidor Final")
+        self.client_info_label.setStyleSheet("""
+            font-size: 14px;
+            color: #64748B;
+            font-weight: bold;
+            background: transparent;
+            border: none;
+        """)
+
+        client_row.addWidget(self.client_input, 3)
+        client_row.addWidget(btn_search_client)
+        client_row.addWidget(btn_clear_client)
+        client_row.addWidget(self.client_info_label, 2)
+        main_layout.addLayout(client_row)
 
         content_layout = QHBoxLayout()
 
@@ -131,6 +204,7 @@ class SalesPage(QWidget):
 
         total_frame = QFrame()
         total_layout = QVBoxLayout(total_frame)
+        total_layout.setSpacing(2)
 
         total_label = QLabel("TOTAL")
         total_label.setStyleSheet("font-size: 14px; color: #64748B;")
@@ -139,8 +213,13 @@ class SalesPage(QWidget):
         self.total_value.setAlignment(Qt.AlignCenter)
         self.total_value.setStyleSheet("font-size: 28px; font-weight: bold; color: #4A6A92;")
 
+        self.discount_label = QLabel("")
+        self.discount_label.setAlignment(Qt.AlignCenter)
+        self.discount_label.setStyleSheet("font-size: 13px; color: #22C55E; font-weight: bold; background: transparent; border: none;")
+
         total_layout.addWidget(total_label)
         total_layout.addWidget(self.total_value)
+        total_layout.addWidget(self.discount_label)
         right_layout.addWidget(total_frame)
 
         self.charge_button = QPushButton("COBRAR")
@@ -154,6 +233,68 @@ class SalesPage(QWidget):
         content_layout.addWidget(left_frame, 3)
         content_layout.addWidget(right_frame, 1)
         main_layout.addLayout(content_layout)
+
+    def on_client_input_changed(self, text):
+        if not text.strip():
+            self.clear_client()
+
+    def search_client(self):
+
+        query = self.client_input.text().strip().upper()
+        if not query:
+            self.clear_client()
+            return
+
+        db = SessionLocal()
+        try:
+            client = db.query(Client).filter(
+                (Client.name == query) |
+                (Client.account_number == query),
+                Client.is_active == True
+            ).first()
+
+            if not client:
+                # Buscar parcial
+                client = db.query(Client).filter(
+                    Client.name.contains(query),
+                    Client.is_active == True
+                ).first()
+
+            if not client:
+                self.show_message("Error", f"Cliente '{query}' no encontrado")
+                return
+
+            self.current_client = client.name
+            self.current_discount = client.discount or 0.0
+            self.client_input.setText(client.name)
+
+            if self.current_discount > 0:
+                self.client_info_label.setText(
+                    f"✓ {client.name}  |  {int(self.current_discount)}% descuento"
+                )
+                self.client_info_label.setStyleSheet(
+                    "font-size: 14px; color: #22C55E; font-weight: bold; background: transparent; border: none;"
+                )
+            else:
+                self.client_info_label.setText(f"✓ {client.name}  |  Sin descuento")
+                self.client_info_label.setStyleSheet(
+                    "font-size: 14px; color: #4A6A92; font-weight: bold; background: transparent; border: none;"
+                )
+
+            self.refresh_cart()
+
+        finally:
+            db.close()
+
+    def clear_client(self):
+        self.current_client = None
+        self.current_discount = 0.0
+        self.client_input.clear()
+        self.client_info_label.setText("Cliente: Consumidor Final")
+        self.client_info_label.setStyleSheet(
+            "font-size: 14px; color: #64748B; font-weight: bold; background: transparent; border: none;"
+        )
+        self.refresh_cart()
 
     def show_message(self, title, message):
 
@@ -239,10 +380,17 @@ class SalesPage(QWidget):
         db = SessionLocal()
 
         try:
+            # Buscar por barcode o por nombre
             product = db.query(Product).filter(
                 Product.barcode == barcode,
                 Product.is_active == True
             ).first()
+
+            if not product:
+                product = db.query(Product).filter(
+                    Product.name.contains(barcode.upper()),
+                    Product.is_active == True
+                ).first()
 
             if not product:
                 self.show_message("Error", "Producto no encontrado")
@@ -279,16 +427,31 @@ class SalesPage(QWidget):
     def refresh_cart(self):
 
         self.cart_list.clear()
-        total = 0
+        subtotal_bruto = 0
 
         for item in self.cart:
             subtotal = item["price"] * item["quantity"]
-            total += subtotal
+            subtotal_bruto += subtotal
             text = f"{item['name']} x{item['quantity']}   $ {int(subtotal)}"
             list_item = QListWidgetItem(text)
             self.cart_list.addItem(list_item)
 
-        self.total_value.setText(f"$ {int(total)}")
+        if self.current_discount > 0:
+            descuento_monto = subtotal_bruto * (self.current_discount / 100)
+            total_final = subtotal_bruto - descuento_monto
+            self.total_value.setText(f"$ {int(total_final)}")
+            self.discount_label.setText(
+                f"Descuento {int(self.current_discount)}%: -$ {int(descuento_monto)}"
+            )
+        else:
+            self.total_value.setText(f"$ {int(subtotal_bruto)}")
+            self.discount_label.setText("")
+
+    def get_total(self):
+        subtotal = sum(item["price"] * item["quantity"] for item in self.cart)
+        if self.current_discount > 0:
+            return subtotal * (1 - self.current_discount / 100)
+        return subtotal
 
     def select_cart_item(self, item):
         self.selected_cart_index = self.cart_list.row(item)
@@ -309,7 +472,6 @@ class SalesPage(QWidget):
         self.refresh_cart()
 
     def register_sale(self, total, payment_method):
-        """Registra la venta. Devuelve (ticket_id, cart_snapshot) o None si falla."""
 
         db = SessionLocal()
 
@@ -382,10 +544,10 @@ class SalesPage(QWidget):
                     self.show_message("Stock insuficiente", f"{product.name} tiene solo {int(product.stock)} unidades disponibles")
                     return
 
-            total = sum(item["price"] * item["quantity"] for item in self.cart)
-
         finally:
             db.close()
+
+        total = self.get_total()
 
         # ── Bucle de pago ─────────────────────────────
         while True:
@@ -394,7 +556,6 @@ class SalesPage(QWidget):
             result = dialog.exec()
 
             if result != QDialog.Accepted:
-                # Canceló en menú principal → vuelve al carrito
                 return
 
             payment_method = dialog.selected_method
@@ -423,10 +584,8 @@ class SalesPage(QWidget):
                 transfer_dialog.exec()
 
                 if transfer_dialog.sale_confirmed:
-                    # Venta confirmada e impresa
                     break
                 else:
-                    # Canceló → vuelve al menú de métodos
                     continue
 
             elif payment_method == "budget":
@@ -445,6 +604,7 @@ class SalesPage(QWidget):
                     continue
 
         self.cart.clear()
+        self.clear_client()
         self.refresh_cart()
         self.load_products()
 
