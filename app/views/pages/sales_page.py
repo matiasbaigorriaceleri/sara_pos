@@ -29,10 +29,8 @@ class SalesPage(QWidget):
 
     def __init__(self):
         super().__init__()
-
         self.selected_cart_index = None
         self.cart = []
-
         self.init_ui()
         self.load_products()
 
@@ -100,33 +98,23 @@ class SalesPage(QWidget):
 
         content_layout = QHBoxLayout()
 
-        # ── Panel izquierdo: productos ──────────────────
         left_frame = QFrame()
         left_layout = QVBoxLayout(left_frame)
 
         lbl_products = QLabel("Productos")
-        lbl_products.setStyleSheet("""
-            font-size: 20px;
-            font-weight: bold;
-            color: #1E293B;
-        """)
+        lbl_products.setStyleSheet("font-size: 20px; font-weight: bold; color: #1E293B;")
         left_layout.addWidget(lbl_products)
 
         self.products_list = QListWidget()
         self.products_list.itemDoubleClicked.connect(self.add_product_to_cart)
         left_layout.addWidget(self.products_list)
 
-        # ── Panel derecho: carrito ──────────────────────
         right_frame = QFrame()
         right_frame.setFixedWidth(420)
         right_layout = QVBoxLayout(right_frame)
 
         lbl_cart = QLabel("Carrito")
-        lbl_cart.setStyleSheet("""
-            font-size: 20px;
-            font-weight: bold;
-            color: #1E293B;
-        """)
+        lbl_cart.setStyleSheet("font-size: 20px; font-weight: bold; color: #1E293B;")
         right_layout.addWidget(lbl_cart)
 
         self.cart_list = QListWidget()
@@ -149,11 +137,7 @@ class SalesPage(QWidget):
 
         self.total_value = QLabel("$ 0")
         self.total_value.setAlignment(Qt.AlignCenter)
-        self.total_value.setStyleSheet("""
-            font-size: 28px;
-            font-weight: bold;
-            color: #4A6A92;
-        """)
+        self.total_value.setStyleSheet("font-size: 28px; font-weight: bold; color: #4A6A92;")
 
         total_layout.addWidget(total_label)
         total_layout.addWidget(self.total_value)
@@ -202,32 +186,25 @@ class SalesPage(QWidget):
     def load_products(self):
 
         self.products_list.clear()
-
         db = SessionLocal()
 
         try:
-            products = db.query(Product).filter(
-                Product.is_active == True
-            ).all()
-
+            products = db.query(Product).filter(Product.is_active == True).all()
             for product in products:
                 item_text = f"{product.name}   $ {int(product.price)}"
                 item = QListWidgetItem(item_text)
                 item.setData(Qt.UserRole, product)
                 self.products_list.addItem(item)
-
         finally:
             db.close()
 
     def add_product_to_cart(self, item):
 
         product = item.data(Qt.UserRole)
-
         db = SessionLocal()
+
         try:
-            db_product = db.query(Product).filter(
-                Product.id == product.id
-            ).first()
+            db_product = db.query(Product).filter(Product.id == product.id).first()
 
             if not db_product or db_product.stock <= 0:
                 self.show_message("Sin stock", f"{product.name} no tiene stock disponible")
@@ -236,10 +213,7 @@ class SalesPage(QWidget):
             for cart_item in self.cart:
                 if cart_item["id"] == product.id:
                     if cart_item["quantity"] >= db_product.stock:
-                        self.show_message(
-                            "Sin stock",
-                            f"{product.name} solo tiene {int(db_product.stock)} unidades disponibles"
-                        )
+                        self.show_message("Sin stock", f"{product.name} solo tiene {int(db_product.stock)} unidades disponibles")
                         return
                     cart_item["quantity"] += 1
                     self.refresh_cart()
@@ -251,7 +225,6 @@ class SalesPage(QWidget):
                 "price": float(product.price),
                 "quantity": 1
             })
-
             self.refresh_cart()
 
         finally:
@@ -260,7 +233,6 @@ class SalesPage(QWidget):
     def add_product_by_barcode(self):
 
         barcode = self.search_input.text().strip()
-
         if not barcode:
             return
 
@@ -284,10 +256,7 @@ class SalesPage(QWidget):
             for cart_item in self.cart:
                 if cart_item["id"] == product.id:
                     if cart_item["quantity"] >= product.stock:
-                        self.show_message(
-                            "Sin stock",
-                            f"{product.name} solo tiene {int(product.stock)} unidades disponibles"
-                        )
+                        self.show_message("Sin stock", f"{product.name} solo tiene {int(product.stock)} unidades disponibles")
                         self.search_input.clear()
                         return
                     cart_item["quantity"] += 1
@@ -301,7 +270,6 @@ class SalesPage(QWidget):
                 "price": float(product.price),
                 "quantity": 1
             })
-
             self.refresh_cart()
             self.search_input.clear()
 
@@ -340,61 +308,17 @@ class SalesPage(QWidget):
         self.selected_cart_index = None
         self.refresh_cart()
 
-    def charge_sale(self):
-
-        if not self.cart:
-            self.show_message("Error", "Debe agregar productos")
-            return
+    def register_sale(self, total, payment_method):
+        """Registra la venta. Devuelve (ticket_id, cart_snapshot) o None si falla."""
 
         db = SessionLocal()
 
         try:
-            cash_session = db.query(CashSession).filter(
-                CashSession.is_open == True
-            ).first()
+            cash_session = db.query(CashSession).filter(CashSession.is_open == True).first()
 
             if not cash_session:
-                self.show_message("Error", "Debe abrir una caja antes de vender")
-                return
-
-            for item in self.cart:
-                product = db.query(Product).filter(
-                    Product.id == item["id"]
-                ).first()
-                if not product:
-                    self.show_message("Error", f"Producto {item['name']} no encontrado")
-                    return
-                if product.stock < item["quantity"]:
-                    self.show_message(
-                        "Stock insuficiente",
-                        f"{product.name} tiene solo {int(product.stock)} unidades disponibles"
-                    )
-                    return
-
-            total = sum(
-                item["price"] * item["quantity"]
-                for item in self.cart
-            )
-
-        finally:
-            db.close()
-
-        # ── Dialogo método de pago ────────────────────
-        dialog = PaymentDialog(total, parent=self)
-        result = dialog.exec()
-
-        if result != QDialog.Accepted:
-            return
-
-        payment_method = dialog.selected_method
-
-        # ── Registrar venta ───────────────────────────
-        db = SessionLocal()
-
-        try:
-            cash_session = db.query(CashSession).filter(
-                CashSession.is_open == True
-            ).first()
+                self.show_message("Error", "No hay caja abierta")
+                return None
 
             ticket = Ticket(
                 total=total,
@@ -406,9 +330,10 @@ class SalesPage(QWidget):
             db.add(ticket)
             db.flush()
 
+            cart_snapshot = list(self.cart)
+
             for item in self.cart:
                 subtotal = item["price"] * item["quantity"]
-
                 ticket_item = TicketItem(
                     ticket_id=ticket.id,
                     product_id=item["id"],
@@ -416,63 +341,116 @@ class SalesPage(QWidget):
                     price=item["price"],
                     subtotal=subtotal
                 )
-
                 db.add(ticket_item)
 
-                product = db.query(Product).filter(
-                    Product.id == item["id"]
-                ).first()
-                product.stock -= item["quantity"]
+                product = db.query(Product).filter(Product.id == item["id"]).first()
+                if product:
+                    product.stock -= item["quantity"]
 
             db.commit()
-
-            ticket_id = ticket.id
-            cart_snapshot = list(self.cart)
+            return ticket.id, cart_snapshot
 
         except Exception as e:
             db.rollback()
             self.show_message("Error", f"Error al registrar venta: {str(e)}")
-            return
+            return None
 
         finally:
             db.close()
 
-        # ── Flujo post-pago ───────────────────────────
+    def charge_sale(self):
 
-        if payment_method == "cash":
-            success, msg = print_ticket(
-                ticket_id,
-                cart_snapshot,
-                total,
-                payment_method
-            )
-            if not success:
-                self.show_message("Aviso", f"Venta registrada pero {msg}")
-            else:
-                self.show_message(
-                    "Venta exitosa",
-                    f"Venta N° {ticket_id:05d} registrada\nTotal: $ {int(total)}"
+        if not self.cart:
+            self.show_message("Error", "Debe agregar productos")
+            return
+
+        db = SessionLocal()
+
+        try:
+            cash_session = db.query(CashSession).filter(CashSession.is_open == True).first()
+
+            if not cash_session:
+                self.show_message("Error", "Debe abrir una caja antes de vender")
+                return
+
+            for item in self.cart:
+                product = db.query(Product).filter(Product.id == item["id"]).first()
+                if not product:
+                    self.show_message("Error", f"Producto {item['name']} no encontrado")
+                    return
+                if product.stock < item["quantity"]:
+                    self.show_message("Stock insuficiente", f"{product.name} tiene solo {int(product.stock)} unidades disponibles")
+                    return
+
+            total = sum(item["price"] * item["quantity"] for item in self.cart)
+
+        finally:
+            db.close()
+
+        # ── Bucle de pago ─────────────────────────────
+        while True:
+
+            dialog = PaymentDialog(total, parent=self)
+            result = dialog.exec()
+
+            if result != QDialog.Accepted:
+                # Canceló en menú principal → vuelve al carrito
+                return
+
+            payment_method = dialog.selected_method
+
+            if payment_method == "cash":
+                reg = self.register_sale(total, payment_method)
+                if reg is None:
+                    return
+                ticket_id, cart_snapshot = reg
+                success, msg = print_ticket(ticket_id, cart_snapshot, total, payment_method)
+                if not success:
+                    self.show_message("Aviso", f"Venta registrada pero {msg}")
+                else:
+                    self.show_message("Venta exitosa", f"Venta N° {ticket_id:05d} registrada\nTotal: $ {int(total)}")
+                break
+
+            elif payment_method in ("transfer", "qr"):
+                transfer_dialog = TransferDialog(
+                    total=total,
+                    ticket_id=None,
+                    cart=list(self.cart),
+                    payment_method=payment_method,
+                    parent=self,
+                    on_confirm=lambda: self.register_sale(total, payment_method)
                 )
+                transfer_dialog.exec()
 
-        elif payment_method in ("transfer", "qr"):
-            transfer_dialog = TransferDialog(
-                total=total,
-                ticket_id=ticket_id,
-                cart=cart_snapshot,
-                payment_method=payment_method,
-                parent=self
-            )
-            transfer_dialog.exec()
+                if transfer_dialog.sale_confirmed:
+                    # Venta confirmada e impresa
+                    break
+                else:
+                    # Canceló → vuelve al menú de métodos
+                    continue
 
-        elif payment_method == "budget":
-            budget_dialog = BudgetDialog(
-                total=total,
-                ticket_id=ticket_id,
-                cart=cart_snapshot,
-                parent=self
-            )
-            budget_dialog.exec()
+            elif payment_method == "budget":
+                budget_dialog = BudgetDialog(
+                    total=total,
+                    ticket_id=None,
+                    cart=list(self.cart),
+                    parent=self,
+                    on_confirm=lambda email: self._confirm_budget(total, email)
+                )
+                result = budget_dialog.exec()
+
+                if result == QDialog.Accepted:
+                    break
+                else:
+                    continue
 
         self.cart.clear()
         self.refresh_cart()
         self.load_products()
+
+    def _confirm_budget(self, total, email):
+        result = self.register_sale(total, "budget")
+        if result is None:
+            return None
+        ticket_id, cart_snapshot = result
+        return ticket_id, cart_snapshot, email

@@ -28,6 +28,14 @@ from app.models.user_model import User
 from app.components.collapsible_section import CollapsibleSection
 
 
+SMTP_PROVIDERS = {
+    "Gmail": ("smtp.gmail.com", "587"),
+    "Outlook / Hotmail": ("smtp.office365.com", "587"),
+    "Yahoo": ("smtp.mail.yahoo.com", "587"),
+    "Otro (manual)": ("", ""),
+}
+
+
 def get_installed_printers():
     system = platform.system()
     try:
@@ -116,22 +124,7 @@ class SettingsPage(QWidget):
 
         self.printer_combo = QComboBox()
         self.printer_combo.setMinimumHeight(50)
-        self.printer_combo.setStyleSheet("""
-            QComboBox {
-                background-color: white;
-                border: 2px solid #B8C4D0;
-                border-radius: 12px;
-                padding: 10px 14px;
-                font-size: 15px;
-                color: #1E293B;
-            }
-            QComboBox::drop-down { border: none; }
-            QComboBox QAbstractItemView {
-                background-color: white;
-                color: #1E293B;
-                selection-background-color: #D8E6F5;
-            }
-        """)
+        self.printer_combo.setStyleSheet(self.combo_style())
         printers = get_installed_printers()
         self.printer_combo.addItems(printers)
         printer_layout.addWidget(self.printer_combo)
@@ -149,22 +142,7 @@ class SettingsPage(QWidget):
         self.printer_size_combo = QComboBox()
         self.printer_size_combo.addItems(["80mm", "58mm"])
         self.printer_size_combo.setMinimumHeight(50)
-        self.printer_size_combo.setStyleSheet("""
-            QComboBox {
-                background-color: white;
-                border: 2px solid #B8C4D0;
-                border-radius: 12px;
-                padding: 10px 14px;
-                font-size: 15px;
-                color: #1E293B;
-            }
-            QComboBox::drop-down { border: none; }
-            QComboBox QAbstractItemView {
-                background-color: white;
-                color: #1E293B;
-                selection-background-color: #D8E6F5;
-            }
-        """)
+        self.printer_size_combo.setStyleSheet(self.combo_style())
         printer_layout.addWidget(self.printer_size_combo)
 
         btn_save_printer = QPushButton("Guardar configuración de impresora")
@@ -204,30 +182,59 @@ class SettingsPage(QWidget):
         payment_widget.setLayout(payment_layout)
         content_layout.addWidget(CollapsibleSection("Métodos de pago", payment_widget))
 
-        # ── Email SMTP ────────────────────────────────
+        # ── Email ─────────────────────────────────────
         smtp_widget = QWidget()
         smtp_layout = QVBoxLayout()
         smtp_layout.setContentsMargins(16, 16, 16, 16)
         smtp_layout.setSpacing(12)
 
-        self.smtp_host_input = self.create_input("SMTP Host")
-        smtp_layout.addWidget(self.smtp_host_input)
-        self.smtp_port_input = self.create_input("SMTP Port")
-        smtp_layout.addWidget(self.smtp_port_input)
-        self.smtp_email_input = self.create_input("Email")
+        provider_label = QLabel("Proveedor de email:")
+        provider_label.setStyleSheet("font-size: 13px; color: #64748B; background: transparent;")
+        smtp_layout.addWidget(provider_label)
+
+        self.smtp_provider_combo = QComboBox()
+        self.smtp_provider_combo.addItems(list(SMTP_PROVIDERS.keys()))
+        self.smtp_provider_combo.setMinimumHeight(50)
+        self.smtp_provider_combo.setStyleSheet(self.combo_style())
+        self.smtp_provider_combo.currentTextChanged.connect(self.on_provider_changed)
+        smtp_layout.addWidget(self.smtp_provider_combo)
+
+        self.smtp_email_input = self.create_input("Tu email")
         smtp_layout.addWidget(self.smtp_email_input)
-        self.smtp_password_input = self.create_input("Password App")
+
+        self.smtp_password_input = self.create_input("Contraseña / Contraseña de app")
         self.smtp_password_input.setEchoMode(QLineEdit.Password)
         smtp_layout.addWidget(self.smtp_password_input)
 
-        btn_save_smtp = QPushButton("Guardar configuración SMTP")
+        # Campos manuales solo para "Otro"
+        self.smtp_manual_frame = QFrame()
+        self.smtp_manual_frame.setStyleSheet("background: transparent;")
+        manual_layout = QVBoxLayout(self.smtp_manual_frame)
+        manual_layout.setContentsMargins(0, 0, 0, 0)
+        manual_layout.setSpacing(10)
+
+        self.smtp_host_input = self.create_input("Servidor SMTP (ej: smtp.tudominio.com)")
+        manual_layout.addWidget(self.smtp_host_input)
+        self.smtp_port_input = self.create_input("Puerto (ej: 587)")
+        manual_layout.addWidget(self.smtp_port_input)
+
+        self.smtp_manual_frame.hide()
+        smtp_layout.addWidget(self.smtp_manual_frame)
+
+        # Hint
+        hint = QLabel("💡 Para Gmail usá una Contraseña de App (no tu contraseña normal).\nActivá verificación en 2 pasos → Contraseñas de aplicación.")
+        hint.setStyleSheet("font-size: 12px; color: #94A3B8; background: transparent;")
+        hint.setWordWrap(True)
+        smtp_layout.addWidget(hint)
+
+        btn_save_smtp = QPushButton("Guardar configuración de email")
         btn_save_smtp.setMinimumHeight(48)
         btn_save_smtp.setStyleSheet(BUTTON_STYLE)
         btn_save_smtp.clicked.connect(self.save_smtp)
         smtp_layout.addWidget(btn_save_smtp)
 
         smtp_widget.setLayout(smtp_layout)
-        content_layout.addWidget(CollapsibleSection("Email SMTP", smtp_widget))
+        content_layout.addWidget(CollapsibleSection("Email", smtp_widget))
 
         # ── ABM Usuarios ──────────────────────────────
         users_widget = QWidget()
@@ -255,22 +262,7 @@ class SettingsPage(QWidget):
         self.user_role_combo = QComboBox()
         self.user_role_combo.addItems(["ADMIN", "ANALISTA"])
         self.user_role_combo.setMinimumHeight(50)
-        self.user_role_combo.setStyleSheet("""
-            QComboBox {
-                background-color: white;
-                border: 2px solid #B8C4D0;
-                border-radius: 12px;
-                padding: 10px 14px;
-                font-size: 15px;
-                color: #1E293B;
-            }
-            QComboBox::drop-down { border: none; }
-            QComboBox QAbstractItemView {
-                background-color: white;
-                color: #1E293B;
-                selection-background-color: #D8E6F5;
-            }
-        """)
+        self.user_role_combo.setStyleSheet(self.combo_style())
 
         BLUE = "QPushButton { background-color: #4A6A92; color: white; border: none; border-radius: 12px; font-size: 14px; font-weight: bold; padding: 12px; } QPushButton:hover { background-color: #3D5A80; }"
         RED = "QPushButton { background-color: #FF003D; color: white; border: none; border-radius: 12px; font-size: 14px; font-weight: bold; padding: 12px; } QPushButton:hover { background-color: #D90429; }"
@@ -333,12 +325,36 @@ class SettingsPage(QWidget):
         self.load_settings()
         self.load_users()
 
+    def combo_style(self):
+        return """
+            QComboBox {
+                background-color: white;
+                border: 2px solid #B8C4D0;
+                border-radius: 12px;
+                padding: 10px 14px;
+                font-size: 15px;
+                color: #1E293B;
+            }
+            QComboBox::drop-down { border: none; }
+            QComboBox QAbstractItemView {
+                background-color: white;
+                color: #1E293B;
+                selection-background-color: #D8E6F5;
+            }
+        """
+
     def create_input(self, placeholder):
         input_field = QLineEdit()
         input_field.setPlaceholderText(placeholder)
         input_field.setMinimumHeight(50)
         input_field.setStyleSheet(INPUT_STYLE)
         return input_field
+
+    def on_provider_changed(self, provider):
+        if provider == "Otro (manual)":
+            self.smtp_manual_frame.show()
+        else:
+            self.smtp_manual_frame.hide()
 
     def refresh_printers(self):
         self.printer_combo.clear()
@@ -377,11 +393,18 @@ class SettingsPage(QWidget):
         self.business_phone_input.setText(data.get("business_phone", ""))
         self.ticket_legend_input.setText(data.get("ticket_legend", ""))
         self.ticket_footer_input.setText(data.get("ticket_footer", ""))
-        self.smtp_host_input.setText(data.get("smtp_host", ""))
-        self.smtp_port_input.setText(data.get("smtp_port", ""))
+        self.mp_alias_input.setText(data.get("mp_alias", ""))
         self.smtp_email_input.setText(data.get("smtp_email", ""))
         self.smtp_password_input.setText(data.get("smtp_password", ""))
-        self.mp_alias_input.setText(data.get("mp_alias", ""))
+        self.smtp_host_input.setText(data.get("smtp_host", ""))
+        self.smtp_port_input.setText(data.get("smtp_port", ""))
+
+        # Cargar proveedor guardado
+        provider = data.get("smtp_provider", "Gmail")
+        index = self.smtp_provider_combo.findText(provider)
+        if index >= 0:
+            self.smtp_provider_combo.setCurrentIndex(index)
+        self.on_provider_changed(provider)
 
         # Cargar impresora guardada
         printer_name = data.get("printer_name", "")
@@ -390,7 +413,6 @@ class SettingsPage(QWidget):
             if index >= 0:
                 self.printer_combo.setCurrentIndex(index)
 
-        # Cargar tamaño guardado
         printer_size = data.get("printer_size", "80mm")
         index = self.printer_size_combo.findText(printer_size)
         if index >= 0:
@@ -426,13 +448,21 @@ class SettingsPage(QWidget):
             self.show_message("OK", "Métodos de pago guardados")
 
     def save_smtp(self):
+        provider = self.smtp_provider_combo.currentText()
+        host, port = SMTP_PROVIDERS.get(provider, ("", ""))
+
+        if provider == "Otro (manual)":
+            host = self.smtp_host_input.text().strip()
+            port = self.smtp_port_input.text().strip()
+
         if self.save_section({
-            "smtp_host": self.smtp_host_input.text(),
-            "smtp_port": self.smtp_port_input.text(),
-            "smtp_email": self.smtp_email_input.text(),
-            "smtp_password": self.smtp_password_input.text(),
+            "smtp_provider": provider,
+            "smtp_host": host,
+            "smtp_port": port,
+            "smtp_email": self.smtp_email_input.text().strip(),
+            "smtp_password": self.smtp_password_input.text().strip(),
         }):
-            self.show_message("OK", "Configuración SMTP guardada")
+            self.show_message("OK", "Configuración de email guardada")
 
     def select_qr(self):
         file_path, _ = QFileDialog.getOpenFileName(
