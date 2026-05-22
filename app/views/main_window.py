@@ -147,11 +147,10 @@ class MainWindow(QMainWindow):
 
         self.navigate_to(0)
 
-        # Mostrar alertas después de que la ventana termine de cargar
         QTimer.singleShot(800, self.check_payment_alerts)
 
     def check_payment_alerts(self):
-        """Verifica facturas de proveedores que vencen hoy o mañana."""
+        """Verifica facturas de proveedores y cuentas corrientes que vencen hoy o mañana."""
 
         if self._alerts_shown:
             return
@@ -161,19 +160,21 @@ class MainWindow(QMainWindow):
         from app.database.database import SessionLocal
         from app.models.supplier_invoice_model import SupplierInvoice
         from app.models.supplier_model import Supplier
+        from app.models.client_account_model import ClientAccount
+        from app.models.client_model import Client
 
         today = date.today()
         tomorrow = today + timedelta(days=1)
 
         db = SessionLocal()
         try:
+            # ── Alertas proveedores ───────────────────
             invoices = db.query(SupplierInvoice).filter(
                 SupplierInvoice.is_paid == False
             ).all()
 
             suppliers = {s.id: s.name for s in db.query(Supplier).all()}
-            alerts_today = []
-            alerts_tomorrow = []
+            alerts_suppliers = []
 
             for inv in invoices:
                 if not inv.payment_date:
@@ -183,29 +184,64 @@ class MainWindow(QMainWindow):
                 monto = f"$ {int(inv.amount or 0)}"
 
                 if inv_date == today:
-                    alerts_today.append(f"• {supplier_name} — {monto} — VENCE HOY")
+                    alerts_suppliers.append(f"• {supplier_name} — {monto} — VENCE HOY")
                 elif inv_date == tomorrow:
-                    alerts_tomorrow.append(f"• {supplier_name} — {monto} — vence mañana")
+                    alerts_suppliers.append(f"• {supplier_name} — {monto} — vence mañana")
+
+            # ── Alertas clientes ──────────────────────
+            accounts = db.query(ClientAccount).filter(
+                ClientAccount.is_paid == False
+            ).all()
+
+            clients = {c.id: c.name for c in db.query(Client).all()}
+            alerts_clients = []
+
+            for acc in accounts:
+                if not acc.payment_date:
+                    continue
+                acc_date = acc.payment_date.date() if hasattr(acc.payment_date, 'date') else acc.payment_date
+                client_name = clients.get(acc.client_id, "Cliente desconocido")
+                monto = f"$ {int(acc.amount or 0)}"
+
+                if acc_date == today:
+                    alerts_clients.append(f"• {client_name} — {monto} — COBRAR HOY")
+                elif acc_date == tomorrow:
+                    alerts_clients.append(f"• {client_name} — {monto} — cobrar mañana")
 
         finally:
             db.close()
 
-        all_alerts = alerts_today + alerts_tomorrow
-
-        if all_alerts:
+        # ── Mostrar alertas proveedores ───────────────
+        if alerts_suppliers:
             msg = QMessageBox(self)
-            msg.setWindowTitle("⚠️ Alertas de pago a proveedores")
+            msg.setWindowTitle("⚠️ Pagos a proveedores pendientes")
             msg.setText(
-                "Tenés facturas pendientes de pago:\n\n" +
-                "\n".join(all_alerts)
+                "Facturas que vencen hoy o mañana:\n\n" +
+                "\n".join(alerts_suppliers)
             )
             msg.setStyleSheet("""
                 QMessageBox { background-color: white; }
-                QLabel {
-                    color: #1E293B;
-                    font-size: 14px;
-                    min-width: 400px;
+                QLabel { color: #1E293B; font-size: 14px; min-width: 400px; }
+                QPushButton {
+                    background-color: #4A6A92; color: white; border: none;
+                    border-radius: 10px; padding: 10px 20px; min-width: 80px;
+                    min-height: 32px; font-size: 13px; font-weight: bold;
                 }
+                QPushButton:hover { background-color: #3D5A80; }
+            """)
+            msg.exec()
+
+        # ── Mostrar alertas clientes ──────────────────
+        if alerts_clients:
+            msg = QMessageBox(self)
+            msg.setWindowTitle("💰 Cobros a clientes pendientes")
+            msg.setText(
+                "Cuentas corrientes que vencen hoy o mañana:\n\n" +
+                "\n".join(alerts_clients)
+            )
+            msg.setStyleSheet("""
+                QMessageBox { background-color: white; }
+                QLabel { color: #1E293B; font-size: 14px; min-width: 400px; }
                 QPushButton {
                     background-color: #4A6A92; color: white; border: none;
                     border-radius: 10px; padding: 10px 20px; min-width: 80px;

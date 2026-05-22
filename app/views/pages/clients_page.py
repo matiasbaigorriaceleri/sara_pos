@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QTabWidget,
     QDateEdit,
     QCheckBox,
+    QSizePolicy,
 )
 
 from PySide6.QtCore import Qt, QDate
@@ -24,6 +25,23 @@ from datetime import datetime
 
 BLUE = "QPushButton { background-color: #4A6A92; color: white; border: none; border-radius: 12px; font-size: 15px; font-weight: bold; } QPushButton:hover { background-color: #3D5A80; }"
 RED = "QPushButton { background-color: #FF003D; color: white; border: none; border-radius: 12px; font-size: 15px; font-weight: bold; } QPushButton:hover { background-color: #D90429; }"
+
+DATE_STYLE = """
+    QDateEdit {
+        background-color: white;
+        border: 2px solid #B8C4D0;
+        border-radius: 12px;
+        padding: 10px 14px;
+        font-size: 14px;
+        color: #1E293B;
+        min-height: 44px;
+        min-width: 140px;
+    }
+    QDateEdit::drop-down { border: none; width: 24px; }
+    QDateEdit:focus { border: 2px solid #4A6A92; }
+"""
+
+LABEL_STYLE = "font-size: 13px; color: #64748B; background: transparent; font-weight: bold;"
 
 
 class ClientsPage(QWidget):
@@ -88,10 +106,8 @@ class ClientsPage(QWidget):
         row2 = QHBoxLayout()
         self.cli_address_input = self.create_input("Dirección")
         self.cli_notes_input = self.create_input("Notas")
-
         self.cli_discount_input = self.create_input("Descuento % (ej: 10)")
         self.cli_discount_input.setMaximumWidth(180)
-
         row2.addWidget(self.cli_address_input)
         row2.addWidget(self.cli_notes_input)
         row2.addWidget(self.cli_discount_input)
@@ -137,12 +153,7 @@ class ClientsPage(QWidget):
         self.clients_table.verticalHeader().setVisible(False)
         self.clients_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.clients_table.setEditTriggers(QTableWidget.NoEditTriggers)
-        self.clients_table.setStyleSheet("""
-            QTableWidget { background-color: white; border-radius: 16px; font-size: 14px; color: #1E293B; border: none; }
-            QHeaderView::section { background-color: #4A6A92; color: white; padding: 12px; border: none; font-weight: bold; }
-            QTableWidget::item { padding: 10px; }
-            QTableWidget::item:selected { background-color: #DBEAFE; color: #1E293B; }
-        """)
+        self.clients_table.setStyleSheet(self.table_style())
         self.clients_table.cellClicked.connect(self.select_client)
         layout.addWidget(self.clients_table)
 
@@ -174,21 +185,30 @@ class ClientsPage(QWidget):
         form_layout.addLayout(row1)
 
         row2 = QHBoxLayout()
+        row2.setSpacing(12)
+        row2.setAlignment(Qt.AlignVCenter)
+
         delivery_label = QLabel("Fecha entrega:")
-        delivery_label.setStyleSheet("font-size: 13px; color: #64748B; background: transparent;")
+        delivery_label.setStyleSheet(LABEL_STYLE)
+        delivery_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+
         self.acc_delivery_date = QDateEdit()
         self.acc_delivery_date.setDate(QDate.currentDate())
         self.acc_delivery_date.setCalendarPopup(True)
         self.acc_delivery_date.setDisplayFormat("dd/MM/yyyy")
-        self.acc_delivery_date.setStyleSheet(INPUT_STYLE)
+        self.acc_delivery_date.setStyleSheet(DATE_STYLE)
+        self.acc_delivery_date.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
 
         payment_label = QLabel("Fecha pago:")
-        payment_label.setStyleSheet("font-size: 13px; color: #64748B; background: transparent;")
+        payment_label.setStyleSheet(LABEL_STYLE)
+        payment_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+
         self.acc_payment_date = QDateEdit()
         self.acc_payment_date.setDate(QDate.currentDate())
         self.acc_payment_date.setCalendarPopup(True)
         self.acc_payment_date.setDisplayFormat("dd/MM/yyyy")
-        self.acc_payment_date.setStyleSheet(INPUT_STYLE)
+        self.acc_payment_date.setStyleSheet(DATE_STYLE)
+        self.acc_payment_date.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
 
         self.acc_paid_check = QCheckBox("Pagado")
         self.acc_paid_check.setStyleSheet("font-size: 14px; color: #1E293B; background: transparent;")
@@ -197,8 +217,10 @@ class ClientsPage(QWidget):
 
         row2.addWidget(delivery_label)
         row2.addWidget(self.acc_delivery_date)
+        row2.addSpacing(8)
         row2.addWidget(payment_label)
         row2.addWidget(self.acc_payment_date)
+        row2.addSpacing(8)
         row2.addWidget(self.acc_paid_check)
         row2.addWidget(self.acc_notes_input)
         form_layout.addLayout(row2)
@@ -238,12 +260,7 @@ class ClientsPage(QWidget):
         self.accounts_table.verticalHeader().setVisible(False)
         self.accounts_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.accounts_table.setEditTriggers(QTableWidget.NoEditTriggers)
-        self.accounts_table.setStyleSheet("""
-            QTableWidget { background-color: white; border-radius: 16px; font-size: 14px; color: #1E293B; border: none; }
-            QHeaderView::section { background-color: #4A6A92; color: white; padding: 12px; border: none; font-weight: bold; }
-            QTableWidget::item { padding: 10px; }
-            QTableWidget::item:selected { background-color: #DBEAFE; color: #1E293B; }
-        """)
+        self.accounts_table.setStyleSheet(self.table_style())
         layout.addWidget(self.accounts_table)
 
         self.load_accounts()
@@ -257,6 +274,14 @@ class ClientsPage(QWidget):
         field.setMinimumHeight(44)
         field.setStyleSheet(INPUT_STYLE)
         return field
+
+    def table_style(self):
+        return """
+            QTableWidget { background-color: white; border-radius: 16px; font-size: 14px; color: #1E293B; border: none; }
+            QHeaderView::section { background-color: #4A6A92; color: white; padding: 12px; border: none; font-weight: bold; }
+            QTableWidget::item { padding: 10px; }
+            QTableWidget::item:selected { background-color: #DBEAFE; color: #1E293B; }
+        """
 
     # ── Lógica Clientes ───────────────────────────────
 
