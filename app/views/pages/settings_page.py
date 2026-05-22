@@ -1,5 +1,7 @@
 from pathlib import Path
 import shutil
+import subprocess
+import platform
 
 from PySide6.QtWidgets import (
     QWidget,
@@ -18,11 +20,37 @@ from PySide6.QtWidgets import (
     QComboBox,
 )
 
+from PySide6.QtCore import Qt
 from app.assets.themes.theme import PRIMARY_COLOR, INPUT_STYLE, BUTTON_STYLE
 from app.database.database import SessionLocal
 from app.models.settings_model import Setting
 from app.models.user_model import User
 from app.components.collapsible_section import CollapsibleSection
+
+
+def get_installed_printers():
+    system = platform.system()
+    try:
+        if system in ("Darwin", "Linux"):
+            result = subprocess.run(
+                ["lpstat", "-a"],
+                capture_output=True, text=True
+            )
+            printers = []
+            for line in result.stdout.splitlines():
+                if line.strip():
+                    printers.append(line.split()[0])
+            return printers if printers else ["Sin impresoras detectadas"]
+        elif system == "Windows":
+            import winreg
+            printers = []
+            key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
+                "SYSTEM\\CurrentControlSet\\Control\\Print\\Printers")
+            for i in range(winreg.QueryInfoKey(key)[0]):
+                printers.append(winreg.EnumKey(key, i))
+            return printers if printers else ["Sin impresoras detectadas"]
+    except Exception:
+        return ["Sin impresoras detectadas"]
 
 
 class SettingsPage(QWidget):
@@ -37,11 +65,7 @@ class SettingsPage(QWidget):
         main_layout.setSpacing(15)
 
         title = QLabel("Configuración")
-        title.setStyleSheet(f"""
-            font-size: 34px;
-            font-weight: bold;
-            color: {PRIMARY_COLOR};
-        """)
+        title.setStyleSheet(f"font-size: 34px; font-weight: bold; color: {PRIMARY_COLOR};")
         main_layout.addWidget(title)
 
         scroll = QScrollArea()
@@ -50,12 +74,13 @@ class SettingsPage(QWidget):
 
         content = QWidget()
         content_layout = QVBoxLayout()
-        content_layout.setSpacing(20)
+        content_layout.setSpacing(12)
 
         # ── Negocio ───────────────────────────────────
         business_widget = QWidget()
         business_layout = QVBoxLayout()
-        business_layout.setSpacing(15)
+        business_layout.setContentsMargins(16, 16, 16, 16)
+        business_layout.setSpacing(12)
 
         self.business_name_input = self.create_input("Nombre negocio")
         business_layout.addWidget(self.business_name_input)
@@ -65,8 +90,16 @@ class SettingsPage(QWidget):
         business_layout.addWidget(self.business_address_input)
         self.business_phone_input = self.create_input("Teléfono")
         business_layout.addWidget(self.business_phone_input)
-        self.ticket_footer_input = self.create_input("Pie ticket")
+        self.ticket_legend_input = self.create_input("Leyenda ticket (ej: Comprobante no válido como factura)")
+        business_layout.addWidget(self.ticket_legend_input)
+        self.ticket_footer_input = self.create_input("Pie ticket (ej: Gracias por su compra)")
         business_layout.addWidget(self.ticket_footer_input)
+
+        btn_save_business = QPushButton("Guardar datos del negocio")
+        btn_save_business.setMinimumHeight(48)
+        btn_save_business.setStyleSheet(BUTTON_STYLE)
+        btn_save_business.clicked.connect(self.save_business)
+        business_layout.addWidget(btn_save_business)
 
         business_widget.setLayout(business_layout)
         content_layout.addWidget(CollapsibleSection("Negocio", business_widget))
@@ -74,12 +107,71 @@ class SettingsPage(QWidget):
         # ── Impresora ─────────────────────────────────
         printer_widget = QWidget()
         printer_layout = QVBoxLayout()
-        printer_layout.setSpacing(15)
+        printer_layout.setContentsMargins(16, 16, 16, 16)
+        printer_layout.setSpacing(12)
 
-        self.printer_name_input = self.create_input("Nombre impresora")
-        printer_layout.addWidget(self.printer_name_input)
-        self.printer_size_input = self.create_input("58mm / 80mm")
-        printer_layout.addWidget(self.printer_size_input)
+        printer_label = QLabel("Impresora instalada en el sistema:")
+        printer_label.setStyleSheet("font-size: 13px; color: #64748B; background: transparent;")
+        printer_layout.addWidget(printer_label)
+
+        self.printer_combo = QComboBox()
+        self.printer_combo.setMinimumHeight(50)
+        self.printer_combo.setStyleSheet("""
+            QComboBox {
+                background-color: white;
+                border: 2px solid #B8C4D0;
+                border-radius: 12px;
+                padding: 10px 14px;
+                font-size: 15px;
+                color: #1E293B;
+            }
+            QComboBox::drop-down { border: none; }
+            QComboBox QAbstractItemView {
+                background-color: white;
+                color: #1E293B;
+                selection-background-color: #D8E6F5;
+            }
+        """)
+        printers = get_installed_printers()
+        self.printer_combo.addItems(printers)
+        printer_layout.addWidget(self.printer_combo)
+
+        btn_refresh_printers = QPushButton("Actualizar lista de impresoras")
+        btn_refresh_printers.setMinimumHeight(44)
+        btn_refresh_printers.setStyleSheet(BUTTON_STYLE)
+        btn_refresh_printers.clicked.connect(self.refresh_printers)
+        printer_layout.addWidget(btn_refresh_printers)
+
+        size_label = QLabel("Tamaño del papel:")
+        size_label.setStyleSheet("font-size: 13px; color: #64748B; background: transparent;")
+        printer_layout.addWidget(size_label)
+
+        self.printer_size_combo = QComboBox()
+        self.printer_size_combo.addItems(["80mm", "58mm"])
+        self.printer_size_combo.setMinimumHeight(50)
+        self.printer_size_combo.setStyleSheet("""
+            QComboBox {
+                background-color: white;
+                border: 2px solid #B8C4D0;
+                border-radius: 12px;
+                padding: 10px 14px;
+                font-size: 15px;
+                color: #1E293B;
+            }
+            QComboBox::drop-down { border: none; }
+            QComboBox QAbstractItemView {
+                background-color: white;
+                color: #1E293B;
+                selection-background-color: #D8E6F5;
+            }
+        """)
+        printer_layout.addWidget(self.printer_size_combo)
+
+        btn_save_printer = QPushButton("Guardar configuración de impresora")
+        btn_save_printer.setMinimumHeight(48)
+        btn_save_printer.setStyleSheet(BUTTON_STYLE)
+        btn_save_printer.clicked.connect(self.save_printer)
+        printer_layout.addWidget(btn_save_printer)
 
         printer_widget.setLayout(printer_layout)
         content_layout.addWidget(CollapsibleSection("Impresora", printer_widget))
@@ -87,7 +179,8 @@ class SettingsPage(QWidget):
         # ── Métodos de pago ───────────────────────────
         payment_widget = QWidget()
         payment_layout = QVBoxLayout()
-        payment_layout.setSpacing(15)
+        payment_layout.setContentsMargins(16, 16, 16, 16)
+        payment_layout.setSpacing(12)
 
         self.mp_alias_input = self.create_input("Alias MercadoPago")
         payment_layout.addWidget(self.mp_alias_input)
@@ -97,10 +190,16 @@ class SettingsPage(QWidget):
         payment_layout.addWidget(self.qr_path_label)
 
         qr_button = QPushButton("Seleccionar QR")
-        qr_button.setMinimumHeight(50)
+        qr_button.setMinimumHeight(48)
         qr_button.setStyleSheet(BUTTON_STYLE)
         qr_button.clicked.connect(self.select_qr)
         payment_layout.addWidget(qr_button)
+
+        btn_save_payment = QPushButton("Guardar métodos de pago")
+        btn_save_payment.setMinimumHeight(48)
+        btn_save_payment.setStyleSheet(BUTTON_STYLE)
+        btn_save_payment.clicked.connect(self.save_payment)
+        payment_layout.addWidget(btn_save_payment)
 
         payment_widget.setLayout(payment_layout)
         content_layout.addWidget(CollapsibleSection("Métodos de pago", payment_widget))
@@ -108,7 +207,8 @@ class SettingsPage(QWidget):
         # ── Email SMTP ────────────────────────────────
         smtp_widget = QWidget()
         smtp_layout = QVBoxLayout()
-        smtp_layout.setSpacing(15)
+        smtp_layout.setContentsMargins(16, 16, 16, 16)
+        smtp_layout.setSpacing(12)
 
         self.smtp_host_input = self.create_input("SMTP Host")
         smtp_layout.addWidget(self.smtp_host_input)
@@ -120,22 +220,21 @@ class SettingsPage(QWidget):
         self.smtp_password_input.setEchoMode(QLineEdit.Password)
         smtp_layout.addWidget(self.smtp_password_input)
 
+        btn_save_smtp = QPushButton("Guardar configuración SMTP")
+        btn_save_smtp.setMinimumHeight(48)
+        btn_save_smtp.setStyleSheet(BUTTON_STYLE)
+        btn_save_smtp.clicked.connect(self.save_smtp)
+        smtp_layout.addWidget(btn_save_smtp)
+
         smtp_widget.setLayout(smtp_layout)
         content_layout.addWidget(CollapsibleSection("Email SMTP", smtp_widget))
-
-        # ── Guardar configuración ─────────────────────
-        save_button = QPushButton("Guardar configuración")
-        save_button.setMinimumHeight(60)
-        save_button.setStyleSheet(BUTTON_STYLE)
-        save_button.clicked.connect(self.save_settings)
-        content_layout.addWidget(save_button)
 
         # ── ABM Usuarios ──────────────────────────────
         users_widget = QWidget()
         users_layout = QVBoxLayout()
-        users_layout.setSpacing(15)
+        users_layout.setContentsMargins(16, 16, 16, 16)
+        users_layout.setSpacing(12)
 
-        # Formulario usuarios
         form_frame = QFrame()
         form_frame.setStyleSheet("background-color: #F8FAFC; border-radius: 12px;")
         form_layout = QVBoxLayout(form_frame)
@@ -151,6 +250,8 @@ class SettingsPage(QWidget):
         form_layout.addLayout(row1)
 
         row2 = QHBoxLayout()
+        row2.setSpacing(10)
+
         self.user_role_combo = QComboBox()
         self.user_role_combo.addItems(["ADMIN", "ANALISTA"])
         self.user_role_combo.setMinimumHeight(50)
@@ -174,7 +275,7 @@ class SettingsPage(QWidget):
         BLUE = "QPushButton { background-color: #4A6A92; color: white; border: none; border-radius: 12px; font-size: 14px; font-weight: bold; padding: 12px; } QPushButton:hover { background-color: #3D5A80; }"
         RED = "QPushButton { background-color: #FF003D; color: white; border: none; border-radius: 12px; font-size: 14px; font-weight: bold; padding: 12px; } QPushButton:hover { background-color: #D90429; }"
 
-        btn_save_user = QPushButton("Crear usuario")
+        btn_save_user = QPushButton("Crear")
         btn_save_user.setMinimumHeight(50)
         btn_save_user.setStyleSheet(BLUE)
         btn_save_user.clicked.connect(self.save_user)
@@ -203,12 +304,9 @@ class SettingsPage(QWidget):
 
         users_layout.addWidget(form_frame)
 
-        # Tabla usuarios
         self.users_table = QTableWidget()
         self.users_table.setColumnCount(4)
-        self.users_table.setHorizontalHeaderLabels([
-            "ID", "Usuario", "Rol", "Estado"
-        ])
+        self.users_table.setHorizontalHeaderLabels(["ID", "Usuario", "Rol", "Estado"])
         self.users_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.users_table.verticalHeader().setVisible(False)
         self.users_table.setSelectionBehavior(QTableWidget.SelectRows)
@@ -242,10 +340,30 @@ class SettingsPage(QWidget):
         input_field.setStyleSheet(INPUT_STYLE)
         return input_field
 
-    # ── Configuración ─────────────────────────────────
+    def refresh_printers(self):
+        self.printer_combo.clear()
+        printers = get_installed_printers()
+        self.printer_combo.addItems(printers)
+
+    def save_section(self, keys_map):
+        db = SessionLocal()
+        try:
+            for key, value in keys_map.items():
+                setting = db.query(Setting).filter(Setting.key == key).first()
+                if setting:
+                    setting.value = value
+                else:
+                    db.add(Setting(key=key, value=value))
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            self.show_message("Error", f"Error al guardar: {str(e)}")
+            return False
+        finally:
+            db.close()
+        return True
 
     def load_settings(self):
-
         db = SessionLocal()
         try:
             settings = db.query(Setting).all()
@@ -257,75 +375,78 @@ class SettingsPage(QWidget):
         self.business_cuit_input.setText(data.get("business_cuit", ""))
         self.business_address_input.setText(data.get("business_address", ""))
         self.business_phone_input.setText(data.get("business_phone", ""))
+        self.ticket_legend_input.setText(data.get("ticket_legend", ""))
         self.ticket_footer_input.setText(data.get("ticket_footer", ""))
-        self.printer_name_input.setText(data.get("printer_name", ""))
-        self.printer_size_input.setText(data.get("printer_size", ""))
-        self.mp_alias_input.setText(data.get("mp_alias", ""))
         self.smtp_host_input.setText(data.get("smtp_host", ""))
         self.smtp_port_input.setText(data.get("smtp_port", ""))
         self.smtp_email_input.setText(data.get("smtp_email", ""))
         self.smtp_password_input.setText(data.get("smtp_password", ""))
+        self.mp_alias_input.setText(data.get("mp_alias", ""))
+
+        # Cargar impresora guardada
+        printer_name = data.get("printer_name", "")
+        if printer_name:
+            index = self.printer_combo.findText(printer_name)
+            if index >= 0:
+                self.printer_combo.setCurrentIndex(index)
+
+        # Cargar tamaño guardado
+        printer_size = data.get("printer_size", "80mm")
+        index = self.printer_size_combo.findText(printer_size)
+        if index >= 0:
+            self.printer_size_combo.setCurrentIndex(index)
 
         qr_path = data.get("payment_qr_path", "")
         if qr_path:
             self.qr_path_label.setText(qr_path)
 
-    def select_qr(self):
+    def save_business(self):
+        if self.save_section({
+            "business_name": self.business_name_input.text(),
+            "business_cuit": self.business_cuit_input.text(),
+            "business_address": self.business_address_input.text(),
+            "business_phone": self.business_phone_input.text(),
+            "ticket_legend": self.ticket_legend_input.text(),
+            "ticket_footer": self.ticket_footer_input.text(),
+        }):
+            self.show_message("OK", "Datos del negocio guardados")
 
+    def save_printer(self):
+        if self.save_section({
+            "printer_name": self.printer_combo.currentText(),
+            "printer_size": self.printer_size_combo.currentText(),
+        }):
+            self.show_message("OK", "Configuración de impresora guardada")
+
+    def save_payment(self):
+        if self.save_section({
+            "mp_alias": self.mp_alias_input.text(),
+            "payment_qr_path": self.qr_path_label.text(),
+        }):
+            self.show_message("OK", "Métodos de pago guardados")
+
+    def save_smtp(self):
+        if self.save_section({
+            "smtp_host": self.smtp_host_input.text(),
+            "smtp_port": self.smtp_port_input.text(),
+            "smtp_email": self.smtp_email_input.text(),
+            "smtp_password": self.smtp_password_input.text(),
+        }):
+            self.show_message("OK", "Configuración SMTP guardada")
+
+    def select_qr(self):
         file_path, _ = QFileDialog.getOpenFileName(
             self, "Seleccionar QR", "", "Images (*.png *.jpg *.jpeg)"
         )
         if not file_path:
             return
-
         qr_folder = Path("app/assets/payment_qr")
         qr_folder.mkdir(parents=True, exist_ok=True)
         destination = qr_folder / "mercadopago_qr.png"
         shutil.copy(file_path, destination)
         self.qr_path_label.setText(str(destination))
 
-    def save_settings(self):
-
-        db = SessionLocal()
-        try:
-            settings_map = {
-                "business_name": self.business_name_input.text(),
-                "business_cuit": self.business_cuit_input.text(),
-                "business_address": self.business_address_input.text(),
-                "business_phone": self.business_phone_input.text(),
-                "ticket_footer": self.ticket_footer_input.text(),
-                "printer_name": self.printer_name_input.text(),
-                "printer_size": self.printer_size_input.text(),
-                "mp_alias": self.mp_alias_input.text(),
-                "payment_qr_path": self.qr_path_label.text(),
-                "smtp_host": self.smtp_host_input.text(),
-                "smtp_port": self.smtp_port_input.text(),
-                "smtp_email": self.smtp_email_input.text(),
-                "smtp_password": self.smtp_password_input.text(),
-            }
-
-            for key, value in settings_map.items():
-                setting = db.query(Setting).filter(Setting.key == key).first()
-                if setting:
-                    setting.value = value
-                else:
-                    db.add(Setting(key=key, value=value))
-
-            db.commit()
-
-        except Exception as e:
-            db.rollback()
-            self.show_message("Error", f"Error al guardar: {str(e)}")
-            return
-        finally:
-            db.close()
-
-        self.show_message("Correcto", "Configuración guardada correctamente")
-
-    # ── ABM Usuarios ──────────────────────────────────
-
     def load_users(self):
-
         db = SessionLocal()
         try:
             users = db.query(User).all()
@@ -340,12 +461,10 @@ class SettingsPage(QWidget):
             self.users_table.setItem(row, 2, QTableWidgetItem(user.role or ""))
             estado = "Activo" if user.is_active else "Inactivo"
             estado_item = QTableWidgetItem(estado)
-            from PySide6.QtCore import Qt
             estado_item.setForeground(Qt.darkGreen if user.is_active else Qt.red)
             self.users_table.setItem(row, 3, estado_item)
 
     def select_user(self, row):
-
         self.selected_user_id = int(self.users_table.item(row, 0).text())
         self.user_username_input.setText(self.users_table.item(row, 1).text())
         role = self.users_table.item(row, 2).text()
@@ -355,7 +474,6 @@ class SettingsPage(QWidget):
         self.user_password_input.clear()
 
     def save_user(self):
-
         username = self.user_username_input.text().strip()
         password = self.user_password_input.text().strip()
         role = self.user_role_combo.currentText()
@@ -370,19 +488,12 @@ class SettingsPage(QWidget):
             if existing:
                 self.show_message("Error", f"El usuario '{username}' ya existe")
                 return
-
-            user = User(
-                username=username,
-                password=password,
-                role=role,
-                is_active=True
-            )
+            user = User(username=username, password=password, role=role, is_active=True)
             db.add(user)
             db.commit()
             self.show_message("OK", f"Usuario '{username}' creado correctamente")
             self.load_users()
             self.clear_user_form()
-
         except Exception as e:
             db.rollback()
             self.show_message("Error", str(e))
@@ -390,7 +501,6 @@ class SettingsPage(QWidget):
             db.close()
 
     def update_user(self):
-
         if not self.selected_user_id:
             self.show_message("Error", "Seleccione un usuario")
             return
@@ -409,17 +519,14 @@ class SettingsPage(QWidget):
             if not user:
                 self.show_message("Error", "Usuario no encontrado")
                 return
-
             user.username = username
             user.role = role
             if password:
                 user.password = password
-
             db.commit()
             self.show_message("OK", "Usuario actualizado correctamente")
             self.load_users()
             self.clear_user_form()
-
         except Exception as e:
             db.rollback()
             self.show_message("Error", str(e))
@@ -427,7 +534,6 @@ class SettingsPage(QWidget):
             db.close()
 
     def toggle_user(self):
-
         if not self.selected_user_id:
             self.show_message("Error", "Seleccione un usuario")
             return
@@ -438,18 +544,15 @@ class SettingsPage(QWidget):
             if not user:
                 self.show_message("Error", "Usuario no encontrado")
                 return
-
             if user.username == "admin":
                 self.show_message("Error", "No se puede desactivar el usuario admin")
                 return
-
             user.is_active = not user.is_active
             db.commit()
             estado = "activado" if user.is_active else "desactivado"
             self.show_message("OK", f"Usuario {estado} correctamente")
             self.load_users()
             self.clear_user_form()
-
         except Exception as e:
             db.rollback()
             self.show_message("Error", str(e))
@@ -463,7 +566,6 @@ class SettingsPage(QWidget):
         self.user_role_combo.setCurrentIndex(0)
 
     def show_message(self, title, message):
-
         msg = QMessageBox(self)
         msg.setWindowTitle(title)
         msg.setText(message)
