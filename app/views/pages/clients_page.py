@@ -22,6 +22,9 @@ from app.models.client_account_model import ClientAccount
 from app.assets.themes.theme import PRIMARY_COLOR, BACKGROUND_COLOR, INPUT_STYLE
 from datetime import datetime
 
+BLUE = "QPushButton { background-color: #4A6A92; color: white; border: none; border-radius: 12px; font-size: 15px; font-weight: bold; } QPushButton:hover { background-color: #3D5A80; }"
+RED = "QPushButton { background-color: #FF003D; color: white; border: none; border-radius: 12px; font-size: 15px; font-weight: bold; } QPushButton:hover { background-color: #D90429; }"
+
 
 class ClientsPage(QWidget):
 
@@ -74,33 +77,25 @@ class ClientsPage(QWidget):
         form_layout.setSpacing(12)
 
         row1 = QHBoxLayout()
-        self.cli_name_input = QLineEdit()
-        self.cli_name_input.setPlaceholderText("Nombre cliente *")
-        self.cli_name_input.setStyleSheet(INPUT_STYLE)
-        self.cli_phone_input = QLineEdit()
-        self.cli_phone_input.setPlaceholderText("Teléfono")
-        self.cli_phone_input.setStyleSheet(INPUT_STYLE)
-        self.cli_email_input = QLineEdit()
-        self.cli_email_input.setPlaceholderText("Email")
-        self.cli_email_input.setStyleSheet(INPUT_STYLE)
+        self.cli_name_input = self.create_input("Nombre cliente *")
+        self.cli_phone_input = self.create_input("Teléfono")
+        self.cli_email_input = self.create_input("Email")
         row1.addWidget(self.cli_name_input)
         row1.addWidget(self.cli_phone_input)
         row1.addWidget(self.cli_email_input)
         form_layout.addLayout(row1)
 
         row2 = QHBoxLayout()
-        self.cli_address_input = QLineEdit()
-        self.cli_address_input.setPlaceholderText("Dirección")
-        self.cli_address_input.setStyleSheet(INPUT_STYLE)
-        self.cli_notes_input = QLineEdit()
-        self.cli_notes_input.setPlaceholderText("Notas")
-        self.cli_notes_input.setStyleSheet(INPUT_STYLE)
+        self.cli_address_input = self.create_input("Dirección")
+        self.cli_notes_input = self.create_input("Notas")
+
+        self.cli_discount_input = self.create_input("Descuento % (ej: 10)")
+        self.cli_discount_input.setMaximumWidth(180)
+
         row2.addWidget(self.cli_address_input)
         row2.addWidget(self.cli_notes_input)
+        row2.addWidget(self.cli_discount_input)
         form_layout.addLayout(row2)
-
-        BLUE = "QPushButton { background-color: #4A6A92; color: white; border: none; border-radius: 12px; font-size: 15px; font-weight: bold; } QPushButton:hover { background-color: #3D5A80; }"
-        RED = "QPushButton { background-color: #FF003D; color: white; border: none; border-radius: 12px; font-size: 15px; font-weight: bold; } QPushButton:hover { background-color: #D90429; }"
 
         btn_row = QHBoxLayout()
         btn_row.setSpacing(12)
@@ -134,9 +129,9 @@ class ClientsPage(QWidget):
         layout.addWidget(form_frame)
 
         self.clients_table = QTableWidget()
-        self.clients_table.setColumnCount(5)
+        self.clients_table.setColumnCount(6)
         self.clients_table.setHorizontalHeaderLabels([
-            "N° Cuenta", "Nombre", "Teléfono", "Email", "Dirección"
+            "N° Cuenta", "Nombre", "Teléfono", "Email", "Dirección", "Descuento %"
         ])
         self.clients_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.clients_table.verticalHeader().setVisible(False)
@@ -170,31 +165,21 @@ class ClientsPage(QWidget):
         form_layout.setSpacing(12)
 
         row1 = QHBoxLayout()
-
-        self.acc_client_input = QLineEdit()
-        self.acc_client_input.setPlaceholderText("N° Cuenta o nombre del cliente *")
-        self.acc_client_input.setStyleSheet(INPUT_STYLE)
-
-        self.acc_detail_input = QLineEdit()
-        self.acc_detail_input.setPlaceholderText("Detalle de la compra")
-        self.acc_detail_input.setStyleSheet(INPUT_STYLE)
-
-        self.acc_amount_input = QLineEdit()
-        self.acc_amount_input.setPlaceholderText("Importe *")
-        self.acc_amount_input.setStyleSheet(INPUT_STYLE)
-
+        self.acc_client_input = self.create_input("N° Cuenta o nombre del cliente *")
+        self.acc_detail_input = self.create_input("Detalle de la compra")
+        self.acc_amount_input = self.create_input("Importe *")
         row1.addWidget(self.acc_client_input)
         row1.addWidget(self.acc_detail_input)
         row1.addWidget(self.acc_amount_input)
         form_layout.addLayout(row1)
 
         row2 = QHBoxLayout()
-
         delivery_label = QLabel("Fecha entrega:")
         delivery_label.setStyleSheet("font-size: 13px; color: #64748B; background: transparent;")
         self.acc_delivery_date = QDateEdit()
         self.acc_delivery_date.setDate(QDate.currentDate())
         self.acc_delivery_date.setCalendarPopup(True)
+        self.acc_delivery_date.setDisplayFormat("dd/MM/yyyy")
         self.acc_delivery_date.setStyleSheet(INPUT_STYLE)
 
         payment_label = QLabel("Fecha pago:")
@@ -202,14 +187,13 @@ class ClientsPage(QWidget):
         self.acc_payment_date = QDateEdit()
         self.acc_payment_date.setDate(QDate.currentDate())
         self.acc_payment_date.setCalendarPopup(True)
+        self.acc_payment_date.setDisplayFormat("dd/MM/yyyy")
         self.acc_payment_date.setStyleSheet(INPUT_STYLE)
 
         self.acc_paid_check = QCheckBox("Pagado")
         self.acc_paid_check.setStyleSheet("font-size: 14px; color: #1E293B; background: transparent;")
 
-        self.acc_notes_input = QLineEdit()
-        self.acc_notes_input.setPlaceholderText("Notas")
-        self.acc_notes_input.setStyleSheet(INPUT_STYLE)
+        self.acc_notes_input = self.create_input("Notas")
 
         row2.addWidget(delivery_label)
         row2.addWidget(self.acc_delivery_date)
@@ -218,9 +202,6 @@ class ClientsPage(QWidget):
         row2.addWidget(self.acc_paid_check)
         row2.addWidget(self.acc_notes_input)
         form_layout.addLayout(row2)
-
-        BLUE = "QPushButton { background-color: #4A6A92; color: white; border: none; border-radius: 12px; font-size: 15px; font-weight: bold; } QPushButton:hover { background-color: #3D5A80; }"
-        RED = "QPushButton { background-color: #FF003D; color: white; border: none; border-radius: 12px; font-size: 15px; font-weight: bold; } QPushButton:hover { background-color: #D90429; }"
 
         btn_row = QHBoxLayout()
         btn_row.setSpacing(12)
@@ -268,6 +249,15 @@ class ClientsPage(QWidget):
         self.load_accounts()
         return widget
 
+    # ── Helpers ───────────────────────────────────────
+
+    def create_input(self, placeholder):
+        field = QLineEdit()
+        field.setPlaceholderText(placeholder)
+        field.setMinimumHeight(44)
+        field.setStyleSheet(INPUT_STYLE)
+        return field
+
     # ── Lógica Clientes ───────────────────────────────
 
     def generate_account_number(self):
@@ -294,6 +284,10 @@ class ClientsPage(QWidget):
             self.clients_table.setItem(row, 2, QTableWidgetItem(c.phone or ""))
             self.clients_table.setItem(row, 3, QTableWidgetItem(c.email or ""))
             self.clients_table.setItem(row, 4, QTableWidgetItem(c.address or ""))
+            discount = c.discount or 0
+            discount_item = QTableWidgetItem(f"{int(discount)}%" if discount > 0 else "Sin descuento")
+            discount_item.setTextAlignment(Qt.AlignCenter)
+            self.clients_table.setItem(row, 5, discount_item)
 
     def select_client(self, row):
 
@@ -304,19 +298,30 @@ class ClientsPage(QWidget):
             client = db.query(Client).filter(Client.account_number == account_number).first()
             if client:
                 self.selected_client_id = client.id
+                self.cli_name_input.setText(client.name or "")
+                self.cli_phone_input.setText(client.phone or "")
+                self.cli_email_input.setText(client.email or "")
+                self.cli_address_input.setText(client.address or "")
+                self.cli_notes_input.setText(client.notes or "")
+                discount = client.discount or 0
+                self.cli_discount_input.setText(str(int(discount)) if discount > 0 else "")
         finally:
             db.close()
-
-        self.cli_name_input.setText(self.clients_table.item(row, 1).text())
-        self.cli_phone_input.setText(self.clients_table.item(row, 2).text())
-        self.cli_email_input.setText(self.clients_table.item(row, 3).text())
-        self.cli_address_input.setText(self.clients_table.item(row, 4).text())
 
     def save_client(self):
 
         name = self.cli_name_input.text().strip().upper()
         if not name:
             self.show_message("Error", "El nombre es obligatorio")
+            return
+
+        try:
+            discount = float(self.cli_discount_input.text().strip() or 0)
+            if discount < 0 or discount > 100:
+                self.show_message("Error", "El descuento debe ser entre 0 y 100")
+                return
+        except ValueError:
+            self.show_message("Error", "El descuento debe ser un número")
             return
 
         db = SessionLocal()
@@ -328,11 +333,15 @@ class ClientsPage(QWidget):
                 email=self.cli_email_input.text().strip(),
                 address=self.cli_address_input.text().strip(),
                 notes=self.cli_notes_input.text().strip(),
+                discount=discount,
                 is_active=True
             )
             db.add(client)
             db.commit()
-            self.show_message("OK", f"Cliente guardado. N° Cuenta: {client.account_number}")
+            msg = f"Cliente guardado. N° Cuenta: {client.account_number}"
+            if discount > 0:
+                msg += f"\nDescuento aplicado: {int(discount)}%"
+            self.show_message("OK", msg)
             self.load_clients()
             self.clear_client_form()
         except Exception as e:
@@ -347,6 +356,15 @@ class ClientsPage(QWidget):
             self.show_message("Error", "Seleccione un cliente")
             return
 
+        try:
+            discount = float(self.cli_discount_input.text().strip() or 0)
+            if discount < 0 or discount > 100:
+                self.show_message("Error", "El descuento debe ser entre 0 y 100")
+                return
+        except ValueError:
+            self.show_message("Error", "El descuento debe ser un número")
+            return
+
         db = SessionLocal()
         try:
             client = db.query(Client).filter(Client.id == self.selected_client_id).first()
@@ -358,6 +376,7 @@ class ClientsPage(QWidget):
             client.email = self.cli_email_input.text().strip()
             client.address = self.cli_address_input.text().strip()
             client.notes = self.cli_notes_input.text().strip()
+            client.discount = discount
             db.commit()
             self.show_message("OK", "Cliente actualizado correctamente")
             self.load_clients()
@@ -396,6 +415,7 @@ class ClientsPage(QWidget):
         self.cli_email_input.clear()
         self.cli_address_input.clear()
         self.cli_notes_input.clear()
+        self.cli_discount_input.clear()
 
     # ── Lógica Cuenta Corriente ───────────────────────
 

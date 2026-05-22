@@ -6,10 +6,13 @@ from PySide6.QtWidgets import (
     QPushButton,
     QLabel,
     QStackedWidget,
+    QMessageBox,
 )
 
+from PySide6.QtCore import QTimer
 from PySide6.QtGui import QGuiApplication
 from app.assets.themes.theme import PRIMARY_COLOR, BACKGROUND_COLOR
+from datetime import date, timedelta
 
 
 class MainWindow(QMainWindow):
@@ -20,6 +23,7 @@ class MainWindow(QMainWindow):
         self.username = username
         self.role = role
         self._pages_loaded = {}
+        self._alerts_shown = False
 
         self.setWindowTitle("SARA POS")
 
@@ -58,7 +62,6 @@ class MainWindow(QMainWindow):
         main_layout.setSpacing(0)
         central_widget.setLayout(main_layout)
 
-        # ── Sidebar ───────────────────────────────────
         sidebar = QWidget()
         sidebar.setFixedWidth(210)
         sidebar.setStyleSheet("background-color: #243B53;")
@@ -76,16 +79,13 @@ class MainWindow(QMainWindow):
         """)
         sidebar_layout.addWidget(logo)
 
-        # ── Pages ─────────────────────────────────────
         self.pages = QStackedWidget()
         self.pages.setStyleSheet(f"background-color: {BACKGROUND_COLOR};")
 
-        # Páginas vacías placeholder
         for i in range(8):
             placeholder = QWidget()
             self.pages.addWidget(placeholder)
 
-        # ── Botones menú ──────────────────────────────
         sales_btn = self.create_menu_button("Ventas")
         sales_btn.clicked.connect(lambda: self.navigate_to(0))
         sidebar_layout.addWidget(sales_btn)
@@ -145,8 +145,75 @@ class MainWindow(QMainWindow):
         main_layout.addWidget(sidebar)
         main_layout.addWidget(self.pages)
 
-        # Cargar solo la primera página al inicio
         self.navigate_to(0)
+
+        # Mostrar alertas después de que la ventana termine de cargar
+        QTimer.singleShot(800, self.check_payment_alerts)
+
+    def check_payment_alerts(self):
+        """Verifica facturas de proveedores que vencen hoy o mañana."""
+
+        if self._alerts_shown:
+            return
+
+        self._alerts_shown = True
+
+        from app.database.database import SessionLocal
+        from app.models.supplier_invoice_model import SupplierInvoice
+        from app.models.supplier_model import Supplier
+
+        today = date.today()
+        tomorrow = today + timedelta(days=1)
+
+        db = SessionLocal()
+        try:
+            invoices = db.query(SupplierInvoice).filter(
+                SupplierInvoice.is_paid == False
+            ).all()
+
+            suppliers = {s.id: s.name for s in db.query(Supplier).all()}
+            alerts_today = []
+            alerts_tomorrow = []
+
+            for inv in invoices:
+                if not inv.payment_date:
+                    continue
+                inv_date = inv.payment_date.date() if hasattr(inv.payment_date, 'date') else inv.payment_date
+                supplier_name = suppliers.get(inv.supplier_id, "Proveedor desconocido")
+                monto = f"$ {int(inv.amount or 0)}"
+
+                if inv_date == today:
+                    alerts_today.append(f"• {supplier_name} — {monto} — VENCE HOY")
+                elif inv_date == tomorrow:
+                    alerts_tomorrow.append(f"• {supplier_name} — {monto} — vence mañana")
+
+        finally:
+            db.close()
+
+        all_alerts = alerts_today + alerts_tomorrow
+
+        if all_alerts:
+            msg = QMessageBox(self)
+            msg.setWindowTitle("⚠️ Alertas de pago a proveedores")
+            msg.setText(
+                "Tenés facturas pendientes de pago:\n\n" +
+                "\n".join(all_alerts)
+            )
+            msg.setStyleSheet("""
+                QMessageBox { background-color: white; }
+                QLabel {
+                    color: #1E293B;
+                    font-size: 14px;
+                    min-width: 400px;
+                }
+                QPushButton {
+                    background-color: #4A6A92; color: white; border: none;
+                    border-radius: 10px; padding: 10px 20px; min-width: 80px;
+                    min-height: 32px; font-size: 13px; font-weight: bold;
+                }
+                QPushButton:hover { background-color: #3D5A80; }
+            """)
+            msg.exec()
 
     def navigate_to(self, index):
 
@@ -176,31 +243,24 @@ class MainWindow(QMainWindow):
         if index == 0:
             from app.views.pages.sales_page import SalesPage
             return SalesPage()
-
         elif index == 1:
             from app.views.pages.sales_detail_page import SalesDetailPage
             return SalesDetailPage()
-
         elif index == 2:
             from app.views.pages.products_page import ProductsPage
             return ProductsPage()
-
         elif index == 3:
             from app.views.pages.cash_register_page import CashRegisterPage
             return CashRegisterPage(self.username)
-
         elif index == 4:
             from app.views.pages.dashboard_page import DashboardPage
             return DashboardPage()
-
         elif index == 5:
             from app.views.pages.suppliers_page import SuppliersPage
             return SuppliersPage()
-
         elif index == 6:
             from app.views.pages.clients_page import ClientsPage
             return ClientsPage()
-
         elif index == 7:
             from app.views.pages.settings_page import SettingsPage
             return SettingsPage()

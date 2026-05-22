@@ -13,16 +13,40 @@ from PySide6.QtWidgets import (
     QTabWidget,
     QDateEdit,
     QCheckBox,
+    QSizePolicy,
 )
 
-from PySide6.QtCore import Qt, QDate
-
+from PySide6.QtCore import Qt, QDate, QTimer
 from app.database.database import SessionLocal
 from app.models.supplier_model import Supplier
 from app.models.supplier_invoice_model import SupplierInvoice
 from app.assets.themes.theme import PRIMARY_COLOR, BACKGROUND_COLOR, INPUT_STYLE
+from datetime import datetime, date, timedelta
 
-from datetime import datetime
+
+DATE_STYLE = """
+    QDateEdit {
+        background-color: white;
+        border: 2px solid #B8C4D0;
+        border-radius: 12px;
+        padding: 10px 14px;
+        font-size: 14px;
+        color: #1E293B;
+        min-height: 44px;
+        min-width: 140px;
+    }
+    QDateEdit::drop-down {
+        border: none;
+        width: 24px;
+    }
+    QDateEdit:focus {
+        border: 2px solid #4A6A92;
+    }
+"""
+
+LABEL_STYLE = "font-size: 13px; color: #64748B; background: transparent; font-weight: bold;"
+BLUE = "QPushButton { background-color: #4A6A92; color: white; border: none; border-radius: 12px; font-size: 15px; font-weight: bold; padding: 10px 16px; } QPushButton:hover { background-color: #3D5A80; }"
+RED = "QPushButton { background-color: #FF003D; color: white; border: none; border-radius: 12px; font-size: 15px; font-weight: bold; padding: 10px 16px; } QPushButton:hover { background-color: #D90429; }"
 
 
 class SuppliersPage(QWidget):
@@ -31,6 +55,7 @@ class SuppliersPage(QWidget):
         super().__init__()
         self.selected_supplier_id = None
         self.setup_ui()
+        self.check_payment_alerts()
 
     def setup_ui(self):
 
@@ -46,23 +71,13 @@ class SuppliersPage(QWidget):
 
         tabs = QTabWidget()
         tabs.setStyleSheet("""
-            QTabWidget::pane {
-                border: none;
-                background: transparent;
-            }
+            QTabWidget::pane { border: none; background: transparent; }
             QTabBar::tab {
-                background: #E2E8F0;
-                color: #64748B;
-                padding: 10px 24px;
-                border-radius: 8px;
-                font-size: 14px;
-                font-weight: bold;
-                margin-right: 6px;
+                background: #E2E8F0; color: #64748B;
+                padding: 10px 24px; border-radius: 8px;
+                font-size: 14px; font-weight: bold; margin-right: 6px;
             }
-            QTabBar::tab:selected {
-                background: #4A6A92;
-                color: white;
-            }
+            QTabBar::tab:selected { background: #4A6A92; color: white; }
         """)
 
         tabs.addTab(self.build_suppliers_tab(), "ABM Proveedores")
@@ -79,7 +94,6 @@ class SuppliersPage(QWidget):
         layout.setContentsMargins(0, 16, 0, 0)
         layout.setSpacing(14)
 
-        # Formulario
         form_frame = QFrame()
         form_frame.setStyleSheet("background-color: white; border-radius: 16px;")
         form_layout = QVBoxLayout(form_frame)
@@ -87,30 +101,18 @@ class SuppliersPage(QWidget):
         form_layout.setSpacing(12)
 
         row1 = QHBoxLayout()
-        self.sup_name_input = QLineEdit()
-        self.sup_name_input.setPlaceholderText("Nombre proveedor *")
-        self.sup_name_input.setStyleSheet(INPUT_STYLE)
-        self.sup_contact_input = QLineEdit()
-        self.sup_contact_input.setPlaceholderText("Contacto")
-        self.sup_contact_input.setStyleSheet(INPUT_STYLE)
-        self.sup_phone_input = QLineEdit()
-        self.sup_phone_input.setPlaceholderText("Teléfono")
-        self.sup_phone_input.setStyleSheet(INPUT_STYLE)
+        self.sup_name_input = self.create_input("Nombre proveedor *")
+        self.sup_contact_input = self.create_input("Contacto")
+        self.sup_phone_input = self.create_input("Teléfono")
         row1.addWidget(self.sup_name_input)
         row1.addWidget(self.sup_contact_input)
         row1.addWidget(self.sup_phone_input)
         form_layout.addLayout(row1)
 
         row2 = QHBoxLayout()
-        self.sup_email_input = QLineEdit()
-        self.sup_email_input.setPlaceholderText("Email")
-        self.sup_email_input.setStyleSheet(INPUT_STYLE)
-        self.sup_address_input = QLineEdit()
-        self.sup_address_input.setPlaceholderText("Dirección")
-        self.sup_address_input.setStyleSheet(INPUT_STYLE)
-        self.sup_notes_input = QLineEdit()
-        self.sup_notes_input.setPlaceholderText("Notas")
-        self.sup_notes_input.setStyleSheet(INPUT_STYLE)
+        self.sup_email_input = self.create_input("Email")
+        self.sup_address_input = self.create_input("Dirección")
+        self.sup_notes_input = self.create_input("Notas")
         row2.addWidget(self.sup_email_input)
         row2.addWidget(self.sup_address_input)
         row2.addWidget(self.sup_notes_input)
@@ -118,9 +120,6 @@ class SuppliersPage(QWidget):
 
         btn_row = QHBoxLayout()
         btn_row.setSpacing(12)
-
-        BLUE = "QPushButton { background-color: #4A6A92; color: white; border: none; border-radius: 12px; font-size: 15px; font-weight: bold; } QPushButton:hover { background-color: #3D5A80; }"
-        RED = "QPushButton { background-color: #FF003D; color: white; border: none; border-radius: 12px; font-size: 15px; font-weight: bold; } QPushButton:hover { background-color: #D90429; }"
 
         btn_save = QPushButton("Guardar")
         btn_save.setFixedHeight(48)
@@ -150,22 +149,14 @@ class SuppliersPage(QWidget):
 
         layout.addWidget(form_frame)
 
-        # Tabla
         self.suppliers_table = QTableWidget()
         self.suppliers_table.setColumnCount(5)
-        self.suppliers_table.setHorizontalHeaderLabels([
-            "ID", "Nombre", "Contacto", "Teléfono", "Email"
-        ])
+        self.suppliers_table.setHorizontalHeaderLabels(["ID", "Nombre", "Contacto", "Teléfono", "Email"])
         self.suppliers_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.suppliers_table.verticalHeader().setVisible(False)
         self.suppliers_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.suppliers_table.setEditTriggers(QTableWidget.NoEditTriggers)
-        self.suppliers_table.setStyleSheet("""
-            QTableWidget { background-color: white; border-radius: 16px; font-size: 14px; color: #1E293B; border: none; }
-            QHeaderView::section { background-color: #4A6A92; color: white; padding: 12px; border: none; font-weight: bold; }
-            QTableWidget::item { padding: 10px; }
-            QTableWidget::item:selected { background-color: #DBEAFE; color: #1E293B; }
-        """)
+        self.suppliers_table.setStyleSheet(self.table_style())
         self.suppliers_table.cellClicked.connect(self.select_supplier)
         layout.addWidget(self.suppliers_table)
 
@@ -187,61 +178,61 @@ class SuppliersPage(QWidget):
         form_layout.setContentsMargins(20, 20, 20, 20)
         form_layout.setSpacing(12)
 
+        # Fila 1: proveedor, n° factura, monto
         row1 = QHBoxLayout()
-
-        self.inv_supplier_input = QLineEdit()
-        self.inv_supplier_input.setPlaceholderText("Nombre proveedor *")
-        self.inv_supplier_input.setStyleSheet(INPUT_STYLE)
-
-        self.inv_number_input = QLineEdit()
-        self.inv_number_input.setPlaceholderText("N° Remito / Factura")
-        self.inv_number_input.setStyleSheet(INPUT_STYLE)
-
-        self.inv_amount_input = QLineEdit()
-        self.inv_amount_input.setPlaceholderText("Monto *")
-        self.inv_amount_input.setStyleSheet(INPUT_STYLE)
-
+        self.inv_supplier_input = self.create_input("Nombre proveedor *")
+        self.inv_number_input = self.create_input("N° Remito / Factura")
+        self.inv_amount_input = self.create_input("Monto *")
         row1.addWidget(self.inv_supplier_input)
         row1.addWidget(self.inv_number_input)
         row1.addWidget(self.inv_amount_input)
         form_layout.addLayout(row1)
 
+        # Fila 2: fechas, pagado, notas
         row2 = QHBoxLayout()
+        row2.setSpacing(12)
+        row2.setAlignment(Qt.AlignVCenter)
 
         entry_label = QLabel("Fecha ingreso:")
-        entry_label.setStyleSheet("font-size: 13px; color: #64748B; background: transparent;")
+        entry_label.setStyleSheet(LABEL_STYLE)
+        entry_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+
         self.inv_entry_date = QDateEdit()
         self.inv_entry_date.setDate(QDate.currentDate())
         self.inv_entry_date.setCalendarPopup(True)
-        self.inv_entry_date.setStyleSheet(INPUT_STYLE)
+        self.inv_entry_date.setDisplayFormat("dd/MM/yyyy")
+        self.inv_entry_date.setStyleSheet(DATE_STYLE)
+        self.inv_entry_date.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
 
         payment_label = QLabel("Fecha pago:")
-        payment_label.setStyleSheet("font-size: 13px; color: #64748B; background: transparent;")
+        payment_label.setStyleSheet(LABEL_STYLE)
+        payment_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+
         self.inv_payment_date = QDateEdit()
         self.inv_payment_date.setDate(QDate.currentDate())
         self.inv_payment_date.setCalendarPopup(True)
-        self.inv_payment_date.setStyleSheet(INPUT_STYLE)
+        self.inv_payment_date.setDisplayFormat("dd/MM/yyyy")
+        self.inv_payment_date.setStyleSheet(DATE_STYLE)
+        self.inv_payment_date.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
 
         self.inv_paid_check = QCheckBox("Pagado")
         self.inv_paid_check.setStyleSheet("font-size: 14px; color: #1E293B; background: transparent;")
 
-        self.inv_notes_input = QLineEdit()
-        self.inv_notes_input.setPlaceholderText("Notas")
-        self.inv_notes_input.setStyleSheet(INPUT_STYLE)
+        self.inv_notes_input = self.create_input("Notas")
 
         row2.addWidget(entry_label)
         row2.addWidget(self.inv_entry_date)
+        row2.addSpacing(8)
         row2.addWidget(payment_label)
         row2.addWidget(self.inv_payment_date)
+        row2.addSpacing(8)
         row2.addWidget(self.inv_paid_check)
         row2.addWidget(self.inv_notes_input)
         form_layout.addLayout(row2)
 
+        # Botones
         btn_row = QHBoxLayout()
         btn_row.setSpacing(12)
-
-        BLUE = "QPushButton { background-color: #4A6A92; color: white; border: none; border-radius: 12px; font-size: 15px; font-weight: bold; } QPushButton:hover { background-color: #3D5A80; }"
-        RED = "QPushButton { background-color: #FF003D; color: white; border: none; border-radius: 12px; font-size: 15px; font-weight: bold; } QPushButton:hover { background-color: #D90429; }"
 
         btn_save = QPushButton("Guardar factura")
         btn_save.setFixedHeight(48)
@@ -274,16 +265,71 @@ class SuppliersPage(QWidget):
         self.invoices_table.verticalHeader().setVisible(False)
         self.invoices_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.invoices_table.setEditTriggers(QTableWidget.NoEditTriggers)
-        self.invoices_table.setStyleSheet("""
-            QTableWidget { background-color: white; border-radius: 16px; font-size: 14px; color: #1E293B; border: none; }
-            QHeaderView::section { background-color: #4A6A92; color: white; padding: 12px; border: none; font-weight: bold; }
-            QTableWidget::item { padding: 10px; }
-            QTableWidget::item:selected { background-color: #DBEAFE; color: #1E293B; }
-        """)
+        self.invoices_table.setStyleSheet(self.table_style())
         layout.addWidget(self.invoices_table)
 
         self.load_invoices()
         return widget
+
+    # ── Helpers ───────────────────────────────────────
+
+    def create_input(self, placeholder):
+        field = QLineEdit()
+        field.setPlaceholderText(placeholder)
+        field.setMinimumHeight(44)
+        field.setStyleSheet(INPUT_STYLE)
+        return field
+
+    def table_style(self):
+        return """
+            QTableWidget { background-color: white; border-radius: 16px; font-size: 14px; color: #1E293B; border: none; }
+            QHeaderView::section { background-color: #4A6A92; color: white; padding: 12px; border: none; font-weight: bold; }
+            QTableWidget::item { padding: 10px; }
+            QTableWidget::item:selected { background-color: #DBEAFE; color: #1E293B; }
+        """
+
+    # ── Alertas de vencimiento ────────────────────────
+
+    def check_payment_alerts(self):
+        """Muestra alertas de facturas que vencen mañana."""
+        tomorrow = date.today() + timedelta(days=1)
+
+        db = SessionLocal()
+        try:
+            invoices = db.query(SupplierInvoice).filter(
+                SupplierInvoice.is_paid == False
+            ).all()
+
+            suppliers = {s.id: s.name for s in db.query(Supplier).all()}
+            alerts = []
+
+            for inv in invoices:
+                if inv.payment_date and inv.payment_date.date() == tomorrow:
+                    supplier_name = suppliers.get(inv.supplier_id, "Proveedor desconocido")
+                    alerts.append(f"• {supplier_name} — $ {int(inv.amount or 0)} vence mañana {tomorrow.strftime('%d/%m/%Y')}")
+
+        finally:
+            db.close()
+
+        if alerts:
+            msg = QMessageBox(self)
+            msg.setWindowTitle("⚠️ Alertas de pago a proveedores")
+            msg.setText("Facturas que vencen mañana:\n\n" + "\n".join(alerts))
+            msg.setStyleSheet("""
+                QMessageBox { background-color: white; }
+                QLabel {
+                    color: #1E293B;
+                    font-size: 14px;
+                    min-width: 380px;
+                }
+                QPushButton {
+                    background-color: #4A6A92; color: white; border: none;
+                    border-radius: 10px; padding: 10px 20px; min-width: 80px;
+                    min-height: 32px; font-size: 13px; font-weight: bold;
+                }
+                QPushButton:hover { background-color: #3D5A80; }
+            """)
+            msg.exec()
 
     # ── Lógica Proveedores ────────────────────────────
 
@@ -445,7 +491,7 @@ class SuppliersPage(QWidget):
             ).first()
 
             if not supplier:
-                self.show_message("Error", f"Proveedor '{supplier_name}' no encontrado")
+                self.show_message("Error", f"Proveedor '{supplier_name}' no encontrado.\nAsegurate de darlo de alta primero.")
                 return
 
             entry_date = self.inv_entry_date.date().toPython()
@@ -483,10 +529,12 @@ class SuppliersPage(QWidget):
         db = SessionLocal()
         try:
             invoice = db.query(SupplierInvoice).filter(SupplierInvoice.id == invoice_id).first()
-            if invoice:
+            if invoice and not invoice.is_paid:
                 invoice.is_paid = True
                 db.commit()
-            self.show_message("OK", "Factura marcada como pagada")
+                self.show_message("OK", f"Factura marcada como pagada\nEgreso de $ {int(invoice.amount or 0)} registrado")
+            elif invoice and invoice.is_paid:
+                self.show_message("Aviso", "Esta factura ya estaba pagada")
             self.load_invoices()
         except Exception as e:
             db.rollback()
