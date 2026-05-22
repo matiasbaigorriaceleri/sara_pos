@@ -114,7 +114,7 @@ class MainWindow(QMainWindow):
         clients_btn.clicked.connect(lambda: self.navigate_to(6))
         sidebar_layout.addWidget(clients_btn)
 
-        if self.role.upper() == "GOD":
+        if self.role.upper() == "ADMIN":
             settings_btn = self.create_menu_button("Configuración")
             settings_btn.clicked.connect(lambda: self.navigate_to(7))
             sidebar_layout.addWidget(settings_btn)
