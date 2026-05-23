@@ -1,6 +1,8 @@
 import sys
+import os
 
 from PySide6.QtWidgets import QApplication
+from PySide6.QtGui import QIcon
 
 from app.database.database import (
     Base,
@@ -34,7 +36,7 @@ admin_user = db.query(User).filter(
 if not admin_user:
     user = User(
         username="admin",
-        password="admin",
+        password="123",
         role="ADMIN",
         is_active=True
     )
@@ -45,6 +47,12 @@ db.close()
 
 # ── Iniciar app ───────────────────────────────────────
 app = QApplication(sys.argv)
+
+# ── Ícono de la app ───────────────────────────────────
+icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "app", "assets", "sara_pos.png")
+if os.path.exists(icon_path):
+    app.setWindowIcon(QIcon(icon_path))
+
 window = LoginWindow()
 window.show()
 sys.exit(app.exec())

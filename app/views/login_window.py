@@ -1,3 +1,5 @@
+import os
+
 from PySide6.QtWidgets import (
     QWidget,
     QLabel,
@@ -8,6 +10,7 @@ from PySide6.QtWidgets import (
 )
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QIcon
 
 from app.assets.themes.theme import (
     PRIMARY_COLOR,
@@ -32,6 +35,14 @@ class LoginWindow(QWidget):
         self.setWindowTitle("SARA POS - Login")
         self.setFixedSize(760, 520)
         self.setStyleSheet(f"background-color: {BACKGROUND_COLOR};")
+
+        # ── Ícono de ventana ──────────────────────────
+        icon_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "..", "..", "app", "assets", "sara_pos.png"
+        )
+        if os.path.exists(icon_path):
+            self.setWindowIcon(QIcon(icon_path))
 
         main_layout = QVBoxLayout()
         main_layout.setContentsMargins(70, 50, 70, 50)
