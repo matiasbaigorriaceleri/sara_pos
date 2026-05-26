@@ -13,6 +13,7 @@ from datetime import datetime
 from app.assets.themes.theme import PRIMARY_COLOR
 from app.database.database import SessionLocal
 from app.models.ticket_model import Ticket
+from app.models.ticket_item_model import TicketItem
 from app.models.product_model import Product
 from app.models.cash_session_model import CashSession
 
@@ -73,16 +74,29 @@ class DashboardPage(QWidget):
                 "budget": "Presupuesto",
             }
 
-            method_totals = {}
-            for t in tickets_today:
-                method = payment_labels.get(t.payment_method, t.payment_method or "otro")
-                method_totals[method] = method_totals.get(method, 0) + (t.total or 0)
-
             last_tickets = sorted(
                 all_tickets,
                 key=lambda t: t.created_at or datetime.min,
                 reverse=True
             )[:6]
+
+            # ── Top 10 productos más vendidos ─────────
+            from collections import defaultdict
+            product_sales = defaultdict(lambda: {"qty": 0, "name": ""})
+
+            all_items = db.query(TicketItem).all()
+            product_names = {p.id: p.name for p in db.query(Product).all()}
+
+            for item in all_items:
+                pid = item.product_id
+                product_sales[pid]["qty"] += item.quantity or 0
+                product_sales[pid]["name"] = product_names.get(pid, f"Producto #{pid}")
+
+            top_products = sorted(
+                product_sales.items(),
+                key=lambda x: x[1]["qty"],
+                reverse=True
+            )[:10]
 
         finally:
             db.close()
@@ -90,11 +104,7 @@ class DashboardPage(QWidget):
         # ── Título ────────────────────────────────────
         header_row = QHBoxLayout()
         title = QLabel("Dashboard")
-        title.setStyleSheet(f"""
-            font-size: 28px;
-            font-weight: bold;
-            color: {PRIMARY_COLOR};
-        """)
+        title.setStyleSheet(f"font-size: 28px; font-weight: bold; color: {PRIMARY_COLOR};")
         date_label = QLabel(datetime.now().strftime("%A %d de %B, %Y").capitalize())
         date_label.setStyleSheet("font-size: 13px; color: #94A3B8;")
         date_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
@@ -147,21 +157,27 @@ class DashboardPage(QWidget):
         sales_inner.addStretch()
         bottom_row.addWidget(sales_card, 3)
 
-        # Métodos de pago
-        methods_card = self.section_card("Por método hoy")
-        methods_inner = methods_card.findChild(QVBoxLayout)
+        # Top 10 productos más vendidos
+        top_card = self.section_card("Top 10 productos más vendidos")
+        top_inner = top_card.findChild(QVBoxLayout)
 
-        if method_totals:
-            for method, total in method_totals.items():
-                row = self.list_row(method, f"$ {int(total)}")
-                methods_inner.addWidget(row)
+        if top_products:
+            for i, (pid, data) in enumerate(top_products):
+                name = data["name"][:28]
+                qty = int(data["qty"])
+                row = self.list_row(
+                    f"{i+1}. {name}",
+                    f"{qty} uni",
+                    value_color="#4A6A92"
+                )
+                top_inner.addWidget(row)
         else:
-            empty = QLabel("Sin ventas hoy")
+            empty = QLabel("Sin ventas registradas")
             empty.setStyleSheet("color: #94A3B8; font-size: 13px; padding: 8px 0;")
-            methods_inner.addWidget(empty)
+            top_inner.addWidget(empty)
 
-        methods_inner.addStretch()
-        bottom_row.addWidget(methods_card, 2)
+        top_inner.addStretch()
+        bottom_row.addWidget(top_card, 2)
 
         # Stock bajo
         stock_card = self.section_card("Stock bajo")
@@ -191,12 +207,7 @@ class DashboardPage(QWidget):
 
         frame = QFrame()
         frame.setMinimumHeight(110)
-        frame.setStyleSheet("""
-            QFrame {
-                background-color: white;
-                border-radius: 14px;
-            }
-        """)
+        frame.setStyleSheet("QFrame { background-color: white; border-radius: 14px; }")
 
         layout = QVBoxLayout(frame)
         layout.setContentsMargins(18, 16, 18, 16)
@@ -207,7 +218,7 @@ class DashboardPage(QWidget):
         layout.addWidget(lbl_title)
 
         lbl_value = QLabel(value)
-        lbl_value.setStyleSheet(f"font-size: 28px; font-weight: bold; color: #1E293B;")
+        lbl_value.setStyleSheet("font-size: 28px; font-weight: bold; color: #1E293B;")
         layout.addWidget(lbl_value)
 
         lbl_sub = QLabel(subtitle)
@@ -219,12 +230,7 @@ class DashboardPage(QWidget):
     def section_card(self, title):
 
         frame = QFrame()
-        frame.setStyleSheet("""
-            QFrame {
-                background-color: white;
-                border-radius: 14px;
-            }
-        """)
+        frame.setStyleSheet("QFrame { background-color: white; border-radius: 14px; }")
 
         layout = QVBoxLayout(frame)
         layout.setContentsMargins(18, 16, 18, 16)
@@ -244,12 +250,7 @@ class DashboardPage(QWidget):
     def list_row(self, label, value, subtitle="", value_color="#1E293B"):
 
         row_widget = QWidget()
-        row_widget.setStyleSheet("""
-            QWidget {
-                border-bottom: 1px solid #F8FAFC;
-                background: transparent;
-            }
-        """)
+        row_widget.setStyleSheet("QWidget { border-bottom: 1px solid #F8FAFC; background: transparent; }")
         row_layout = QHBoxLayout(row_widget)
         row_layout.setContentsMargins(0, 6, 0, 6)
         row_layout.setSpacing(8)
