@@ -20,6 +20,7 @@ from app.models.supplier_model import Supplier
 from app.models.client_model import Client
 from app.models.supplier_invoice_model import SupplierInvoice
 from app.models.client_account_model import ClientAccount
+from app.models.cash_movement_model import CashMovement
 
 from app.views.login_window import LoginWindow
 

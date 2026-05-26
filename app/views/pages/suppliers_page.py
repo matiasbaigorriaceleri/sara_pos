@@ -16,13 +16,12 @@ from PySide6.QtWidgets import (
     QSizePolicy,
 )
 
-from PySide6.QtCore import Qt, QDate, QTimer
+from PySide6.QtCore import Qt, QDate
 from app.database.database import SessionLocal
 from app.models.supplier_model import Supplier
 from app.models.supplier_invoice_model import SupplierInvoice
 from app.assets.themes.theme import PRIMARY_COLOR, BACKGROUND_COLOR, INPUT_STYLE
 from datetime import datetime, date, timedelta
-
 
 DATE_STYLE = """
     QDateEdit {
@@ -35,13 +34,8 @@ DATE_STYLE = """
         min-height: 44px;
         min-width: 140px;
     }
-    QDateEdit::drop-down {
-        border: none;
-        width: 24px;
-    }
-    QDateEdit:focus {
-        border: 2px solid #4A6A92;
-    }
+    QDateEdit::drop-down { border: none; width: 24px; }
+    QDateEdit:focus { border: 2px solid #4A6A92; }
 """
 
 LABEL_STYLE = "font-size: 13px; color: #64748B; background: transparent; font-weight: bold;"
@@ -178,7 +172,6 @@ class SuppliersPage(QWidget):
         form_layout.setContentsMargins(20, 20, 20, 20)
         form_layout.setSpacing(12)
 
-        # Fila 1: proveedor, n° factura, monto
         row1 = QHBoxLayout()
         self.inv_supplier_input = self.create_input("Nombre proveedor *")
         self.inv_number_input = self.create_input("N° Remito / Factura")
@@ -188,7 +181,6 @@ class SuppliersPage(QWidget):
         row1.addWidget(self.inv_amount_input)
         form_layout.addLayout(row1)
 
-        # Fila 2: fechas, pagado, notas
         row2 = QHBoxLayout()
         row2.setSpacing(12)
         row2.setAlignment(Qt.AlignVCenter)
@@ -230,7 +222,6 @@ class SuppliersPage(QWidget):
         row2.addWidget(self.inv_notes_input)
         form_layout.addLayout(row2)
 
-        # Botones
         btn_row = QHBoxLayout()
         btn_row.setSpacing(12)
 
@@ -291,37 +282,33 @@ class SuppliersPage(QWidget):
     # ── Alertas de vencimiento ────────────────────────
 
     def check_payment_alerts(self):
-        """Muestra alertas de facturas que vencen mañana."""
         tomorrow = date.today() + timedelta(days=1)
+        today = date.today()
 
         db = SessionLocal()
         try:
-            invoices = db.query(SupplierInvoice).filter(
-                SupplierInvoice.is_paid == False
-            ).all()
-
+            invoices = db.query(SupplierInvoice).filter(SupplierInvoice.is_paid == False).all()
             suppliers = {s.id: s.name for s in db.query(Supplier).all()}
             alerts = []
 
             for inv in invoices:
-                if inv.payment_date and inv.payment_date.date() == tomorrow:
+                if inv.payment_date:
+                    inv_date = inv.payment_date.date() if hasattr(inv.payment_date, 'date') else inv.payment_date
                     supplier_name = suppliers.get(inv.supplier_id, "Proveedor desconocido")
-                    alerts.append(f"• {supplier_name} — $ {int(inv.amount or 0)} vence mañana {tomorrow.strftime('%d/%m/%Y')}")
-
+                    if inv_date == today:
+                        alerts.append(f"• {supplier_name} — $ {int(inv.amount or 0)} — VENCE HOY")
+                    elif inv_date == tomorrow:
+                        alerts.append(f"• {supplier_name} — $ {int(inv.amount or 0)} — vence mañana")
         finally:
             db.close()
 
         if alerts:
             msg = QMessageBox(self)
             msg.setWindowTitle("⚠️ Alertas de pago a proveedores")
-            msg.setText("Facturas que vencen mañana:\n\n" + "\n".join(alerts))
+            msg.setText("Facturas que vencen hoy o mañana:\n\n" + "\n".join(alerts))
             msg.setStyleSheet("""
                 QMessageBox { background-color: white; }
-                QLabel {
-                    color: #1E293B;
-                    font-size: 14px;
-                    min-width: 380px;
-                }
+                QLabel { color: #1E293B; font-size: 14px; min-width: 380px; }
                 QPushButton {
                     background-color: #4A6A92; color: white; border: none;
                     border-radius: 10px; padding: 10px 20px; min-width: 80px;
@@ -529,13 +516,44 @@ class SuppliersPage(QWidget):
         db = SessionLocal()
         try:
             invoice = db.query(SupplierInvoice).filter(SupplierInvoice.id == invoice_id).first()
-            if invoice and not invoice.is_paid:
-                invoice.is_paid = True
-                db.commit()
-                self.show_message("OK", f"Factura marcada como pagada\nEgreso de $ {int(invoice.amount or 0)} registrado")
-            elif invoice and invoice.is_paid:
+            if not invoice:
+                self.show_message("Error", "Factura no encontrada")
+                return
+
+            if invoice.is_paid:
                 self.show_message("Aviso", "Esta factura ya estaba pagada")
+                return
+
+            invoice.is_paid = True
+
+            # ── Registrar egreso en caja abierta ──────
+            from app.models.cash_session_model import CashSession
+            from app.models.cash_movement_model import CashMovement
+
+            cash_session = db.query(CashSession).filter(CashSession.is_open == True).first()
+
+            supplier_name = self.invoices_table.item(selected_row, 1).text()
+            invoice_number = self.invoices_table.item(selected_row, 2).text()
+            concept = f"Pago a proveedor: {supplier_name}"
+            if invoice_number:
+                concept += f" — Factura {invoice_number}"
+
+            if cash_session:
+                movement = CashMovement(
+                    cash_session_id=cash_session.id,
+                    type="egreso",
+                    concept=concept,
+                    amount=invoice.amount or 0,
+                )
+                db.add(movement)
+                msg = f"Factura marcada como pagada\nEgreso de $ {int(invoice.amount or 0)} registrado en caja"
+            else:
+                msg = f"Factura marcada como pagada\n⚠️ No hay caja abierta — el egreso no se registró en caja"
+
+            db.commit()
+            self.show_message("OK", msg)
             self.load_invoices()
+
         except Exception as e:
             db.rollback()
             self.show_message("Error", str(e))
