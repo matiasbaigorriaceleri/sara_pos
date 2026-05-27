@@ -1,5 +1,6 @@
 import sys
 import os
+import bcrypt
 
 from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QIcon
@@ -35,9 +36,10 @@ admin_user = db.query(User).filter(
 ).first()
 
 if not admin_user:
+    hashed = bcrypt.hashpw("123".encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
     user = User(
         username="admin",
-        password="123",
+        password=hashed,
         role="ADMIN",
         is_active=True
     )
@@ -49,7 +51,6 @@ db.close()
 # ── Iniciar app ───────────────────────────────────────
 app = QApplication(sys.argv)
 
-# ── Ícono de la app ───────────────────────────────────
 icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "app", "assets", "sara_pos.png")
 if os.path.exists(icon_path):
     app.setWindowIcon(QIcon(icon_path))

@@ -1,4 +1,5 @@
 import os
+import bcrypt
 
 from PySide6.QtWidgets import (
     QWidget,
@@ -36,7 +37,6 @@ class LoginWindow(QWidget):
         self.setFixedSize(760, 520)
         self.setStyleSheet(f"background-color: {BACKGROUND_COLOR};")
 
-        # ── Ícono de ventana ──────────────────────────
         icon_path = os.path.join(
             os.path.dirname(os.path.abspath(__file__)),
             "..", "..", "app", "assets", "sara_pos.png"
@@ -94,17 +94,33 @@ class LoginWindow(QWidget):
         username = self.username_input.text().strip()
         password = self.password_input.text().strip()
 
+        if not username or not password:
+            QMessageBox.warning(self, "Error", "Ingresá usuario y contraseña")
+            return
+
         db = SessionLocal()
         try:
             user = db.query(User).filter(
                 User.username == username,
-                User.password == password,
                 User.is_active == True
             ).first()
         finally:
             db.close()
 
         if not user:
+            QMessageBox.warning(self, "Error", "Usuario o contraseña incorrectos")
+            return
+
+        # Verificar contraseña con bcrypt
+        try:
+            password_ok = bcrypt.checkpw(
+                password.encode('utf-8'),
+                user.password.encode('utf-8')
+            )
+        except Exception:
+            password_ok = False
+
+        if not password_ok:
             QMessageBox.warning(self, "Error", "Usuario o contraseña incorrectos")
             return
 

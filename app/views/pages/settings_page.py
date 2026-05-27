@@ -1,3 +1,4 @@
+import bcrypt
 from pathlib import Path
 import shutil
 import subprocess
@@ -40,10 +41,7 @@ def get_installed_printers():
     system = platform.system()
     try:
         if system in ("Darwin", "Linux"):
-            result = subprocess.run(
-                ["lpstat", "-a"],
-                capture_output=True, text=True
-            )
+            result = subprocess.run(["lpstat", "-a"], capture_output=True, text=True)
             printers = []
             for line in result.stdout.splitlines():
                 if line.strip():
@@ -61,11 +59,14 @@ def get_installed_printers():
         return ["Sin impresoras detectadas"]
 
 
+def hash_password(password):
+    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+
 class SettingsPage(QWidget):
 
     def __init__(self):
         super().__init__()
-
         self.selected_user_id = None
 
         main_layout = QVBoxLayout()
@@ -129,11 +130,11 @@ class SettingsPage(QWidget):
         self.printer_combo.addItems(printers)
         printer_layout.addWidget(self.printer_combo)
 
-        btn_refresh_printers = QPushButton("Actualizar lista de impresoras")
-        btn_refresh_printers.setMinimumHeight(44)
-        btn_refresh_printers.setStyleSheet(BUTTON_STYLE)
-        btn_refresh_printers.clicked.connect(self.refresh_printers)
-        printer_layout.addWidget(btn_refresh_printers)
+        btn_refresh = QPushButton("Actualizar lista de impresoras")
+        btn_refresh.setMinimumHeight(44)
+        btn_refresh.setStyleSheet(BUTTON_STYLE)
+        btn_refresh.clicked.connect(self.refresh_printers)
+        printer_layout.addWidget(btn_refresh)
 
         size_label = QLabel("Tamaño del papel:")
         size_label.setStyleSheet("font-size: 13px; color: #64748B; background: transparent;")
@@ -206,7 +207,6 @@ class SettingsPage(QWidget):
         self.smtp_password_input.setEchoMode(QLineEdit.Password)
         smtp_layout.addWidget(self.smtp_password_input)
 
-        # Campos manuales solo para "Otro"
         self.smtp_manual_frame = QFrame()
         self.smtp_manual_frame.setStyleSheet("background: transparent;")
         manual_layout = QVBoxLayout(self.smtp_manual_frame)
@@ -221,8 +221,7 @@ class SettingsPage(QWidget):
         self.smtp_manual_frame.hide()
         smtp_layout.addWidget(self.smtp_manual_frame)
 
-        # Hint
-        hint = QLabel("💡 Para Gmail usá una Contraseña de App (no tu contraseña normal).\nActivá verificación en 2 pasos → Contraseñas de aplicación.")
+        hint = QLabel("💡 Para Gmail usá una Contraseña de App (no tu contraseña normal).")
         hint.setStyleSheet("font-size: 12px; color: #94A3B8; background: transparent;")
         hint.setWordWrap(True)
         smtp_layout.addWidget(hint)
@@ -358,8 +357,7 @@ class SettingsPage(QWidget):
 
     def refresh_printers(self):
         self.printer_combo.clear()
-        printers = get_installed_printers()
-        self.printer_combo.addItems(printers)
+        self.printer_combo.addItems(get_installed_printers())
 
     def save_section(self, keys_map):
         db = SessionLocal()
@@ -399,14 +397,12 @@ class SettingsPage(QWidget):
         self.smtp_host_input.setText(data.get("smtp_host", ""))
         self.smtp_port_input.setText(data.get("smtp_port", ""))
 
-        # Cargar proveedor guardado
         provider = data.get("smtp_provider", "Gmail")
         index = self.smtp_provider_combo.findText(provider)
         if index >= 0:
             self.smtp_provider_combo.setCurrentIndex(index)
         self.on_provider_changed(provider)
 
-        # Cargar impresora guardada
         printer_name = data.get("printer_name", "")
         if printer_name:
             index = self.printer_combo.findText(printer_name)
@@ -450,11 +446,9 @@ class SettingsPage(QWidget):
     def save_smtp(self):
         provider = self.smtp_provider_combo.currentText()
         host, port = SMTP_PROVIDERS.get(provider, ("", ""))
-
         if provider == "Otro (manual)":
             host = self.smtp_host_input.text().strip()
             port = self.smtp_port_input.text().strip()
-
         if self.save_section({
             "smtp_provider": provider,
             "smtp_host": host,
@@ -518,7 +512,12 @@ class SettingsPage(QWidget):
             if existing:
                 self.show_message("Error", f"El usuario '{username}' ya existe")
                 return
-            user = User(username=username, password=password, role=role, is_active=True)
+            user = User(
+                username=username,
+                password=hash_password(password),
+                role=role,
+                is_active=True
+            )
             db.add(user)
             db.commit()
             self.show_message("OK", f"Usuario '{username}' creado correctamente")
@@ -552,7 +551,7 @@ class SettingsPage(QWidget):
             user.username = username
             user.role = role
             if password:
-                user.password = password
+                user.password = hash_password(password)
             db.commit()
             self.show_message("OK", "Usuario actualizado correctamente")
             self.load_users()
