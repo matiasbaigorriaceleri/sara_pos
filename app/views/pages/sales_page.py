@@ -33,8 +33,9 @@ class SalesPage(QWidget):
         super().__init__()
         self.selected_cart_index = None
         self.cart = []
-        self.current_client = None  # None = Consumidor Final
+        self.current_client = None
         self.current_discount = 0.0
+        self._all_products = []   # cache para filtrado en tiempo real
         self.init_ui()
         self.load_products()
 
@@ -58,17 +59,20 @@ class SalesPage(QWidget):
             QListWidget {
                 border: none;
                 background: transparent;
-                font-size: 18px;
-                padding: 10px;
+                font-size: 14px;
+                padding: 6px;
             }
             QListWidget::item {
-                padding: 18px;
-                border-radius: 10px;
-                margin-bottom: 10px;
+                padding: 10px 12px;
+                border-radius: 8px;
+                margin-bottom: 4px;
             }
             QListWidget::item:selected {
                 background-color: #D8E6F5;
                 color: #1E293B;
+            }
+            QListWidget::item:hover {
+                background-color: #EFF6FF;
             }
             QLineEdit {
                 background-color: white;
@@ -98,8 +102,9 @@ class SalesPage(QWidget):
 
         # ── Buscador de productos ─────────────────────
         self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("Buscar producto por nombre o barcode...")
+        self.search_input.setPlaceholderText("Buscar por nombre, código o barcode... (Enter para agregar directo)")
         self.search_input.returnPressed.connect(self.add_product_by_barcode)
+        self.search_input.textChanged.connect(lambda text: self.filter_products(text))
         main_layout.addWidget(self.search_input)
 
         # ── Selector de cliente ───────────────────────
@@ -170,52 +175,100 @@ class SalesPage(QWidget):
         main_layout.addLayout(client_row)
 
         content_layout = QHBoxLayout()
+        content_layout.setSpacing(12)
 
+        # ── Panel izquierdo — Productos ───────────────
         left_frame = QFrame()
         left_layout = QVBoxLayout(left_frame)
+        left_layout.setContentsMargins(12, 12, 12, 12)
+        left_layout.setSpacing(8)
 
         lbl_products = QLabel("Productos")
-        lbl_products.setStyleSheet("font-size: 20px; font-weight: bold; color: #1E293B;")
+        lbl_products.setStyleSheet("font-size: 18px; font-weight: bold; color: #1E293B; background: transparent; border: none;")
         left_layout.addWidget(lbl_products)
 
         self.products_list = QListWidget()
         self.products_list.itemDoubleClicked.connect(self.add_product_to_cart)
+        self.products_list.itemEntered.connect(self.show_product_tooltip)
+        self.products_list.setMouseTracking(True)
         left_layout.addWidget(self.products_list)
 
+        # Label nombre completo del producto al hover
+        self.product_name_label = QLabel("")
+        self.product_name_label.setStyleSheet("""
+            font-size: 13px;
+            color: #1E293B;
+            font-weight: bold;
+            background-color: #DBEAFE;
+            border: 1px solid #93C5FD;
+            border-radius: 8px;
+            padding: 6px 10px;
+        """)
+        self.product_name_label.setWordWrap(True)
+        self.product_name_label.setMinimumHeight(36)
+        self.product_name_label.hide()
+        left_layout.addWidget(self.product_name_label)
+
+        # ── Panel derecho — Carrito ───────────────────
         right_frame = QFrame()
-        right_frame.setFixedWidth(420)
+        right_frame.setFixedWidth(320)
         right_layout = QVBoxLayout(right_frame)
+        right_layout.setContentsMargins(12, 12, 12, 12)
+        right_layout.setSpacing(8)
 
         lbl_cart = QLabel("Carrito")
-        lbl_cart.setStyleSheet("font-size: 20px; font-weight: bold; color: #1E293B;")
+        lbl_cart.setStyleSheet("font-size: 18px; font-weight: bold; color: #1E293B; background: transparent; border: none;")
         right_layout.addWidget(lbl_cart)
 
         self.cart_list = QListWidget()
+        self.cart_list.setStyleSheet("""
+            QListWidget {
+                border: none;
+                background: transparent;
+                font-size: 13px;
+                padding: 4px;
+            }
+            QListWidget::item {
+                padding: 8px 10px;
+                border-radius: 8px;
+                margin-bottom: 3px;
+            }
+            QListWidget::item:selected {
+                background-color: #D8E6F5;
+                color: #1E293B;
+            }
+        """)
         self.cart_list.itemClicked.connect(self.select_cart_item)
         right_layout.addWidget(self.cart_list)
 
         self.delete_button = QPushButton("Eliminar seleccionado")
         self.delete_button.setStyleSheet("""
-            QPushButton { background-color: #FF003D; }
+            QPushButton {
+                background-color: #FF003D;
+                font-size: 14px;
+                padding: 12px;
+            }
             QPushButton:hover { background-color: #D9043A; }
         """)
+        self.delete_button.setFixedHeight(44)
         self.delete_button.clicked.connect(self.remove_selected_item)
         right_layout.addWidget(self.delete_button)
 
         total_frame = QFrame()
         total_layout = QVBoxLayout(total_frame)
         total_layout.setSpacing(2)
+        total_layout.setContentsMargins(8, 8, 8, 8)
 
         total_label = QLabel("TOTAL")
-        total_label.setStyleSheet("font-size: 14px; color: #64748B;")
+        total_label.setStyleSheet("font-size: 13px; color: #64748B; background: transparent; border: none;")
 
         self.total_value = QLabel("$ 0")
         self.total_value.setAlignment(Qt.AlignCenter)
-        self.total_value.setStyleSheet("font-size: 28px; font-weight: bold; color: #4A6A92;")
+        self.total_value.setStyleSheet("font-size: 26px; font-weight: bold; color: #4A6A92; background: transparent; border: none;")
 
         self.discount_label = QLabel("")
         self.discount_label.setAlignment(Qt.AlignCenter)
-        self.discount_label.setStyleSheet("font-size: 13px; color: #22C55E; font-weight: bold; background: transparent; border: none;")
+        self.discount_label.setStyleSheet("font-size: 12px; color: #22C55E; font-weight: bold; background: transparent; border: none;")
 
         total_layout.addWidget(total_label)
         total_layout.addWidget(self.total_value)
@@ -224,15 +277,49 @@ class SalesPage(QWidget):
 
         self.charge_button = QPushButton("COBRAR")
         self.charge_button.setStyleSheet("""
-            QPushButton { background-color: #4A6A92; }
+            QPushButton {
+                background-color: #4A6A92;
+                font-size: 16px;
+                padding: 14px;
+            }
             QPushButton:hover { background-color: #3D5A80; }
         """)
         self.charge_button.clicked.connect(self.charge_sale)
         right_layout.addWidget(self.charge_button)
 
-        content_layout.addWidget(left_frame, 3)
-        content_layout.addWidget(right_frame, 1)
+        content_layout.addWidget(left_frame, 1)
+        content_layout.addWidget(right_frame, 0)
         main_layout.addLayout(content_layout)
+
+    # ── Búsqueda y filtrado en tiempo real ────────────
+
+    def filter_products(self, text):
+        """Filtra la lista de productos mientras el usuario escribe."""
+        self.product_name_label.hide()
+        query = text.strip().upper()
+
+        if not query:
+            self._render_product_list(self._all_products)
+            return
+
+        filtered = [
+            p for p in self._all_products
+            if query in p["name"].upper()
+            or query in p["barcode"]
+            or query in p["product_code"]
+        ]
+        self._render_product_list(filtered)
+
+    def show_product_tooltip(self, item):
+        """Muestra el nombre completo del producto al hacer hover."""
+        product = item.data(Qt.UserRole)
+        if product:
+            self.product_name_label.setText(
+                f"▸  {product['name']}  —  Stock: {int(product['stock'])}  —  $ {int(product['price'])}"
+            )
+            self.product_name_label.show()
+
+    # ── Cliente ───────────────────────────────────────
 
     def on_client_input_changed(self, text):
         if not text.strip():
@@ -254,7 +341,6 @@ class SalesPage(QWidget):
             ).first()
 
             if not client:
-                # Buscar parcial
                 client = db.query(Client).filter(
                     Client.name.contains(query),
                     Client.is_active == True
@@ -325,45 +411,69 @@ class SalesPage(QWidget):
         msg.exec()
 
     def load_products(self):
-
-        self.products_list.clear()
+        """Carga todos los productos en el cache y los muestra."""
         db = SessionLocal()
-
         try:
             products = db.query(Product).filter(Product.is_active == True).all()
-            for product in products:
-                item_text = f"{product.name}   $ {int(product.price)}"
-                item = QListWidgetItem(item_text)
-                item.setData(Qt.UserRole, product)
-                self.products_list.addItem(item)
+            # Guardar como dicts para evitar problemas de sesión cerrada
+            self._all_products = [
+                {
+                    "id": p.id,
+                    "name": p.name,
+                    "price": float(p.price or 0),
+                    "stock": float(p.stock or 0),
+                    "barcode": str(p.barcode or ""),
+                    "product_code": str(p.product_code or ""),
+                }
+                for p in products
+            ]
         finally:
             db.close()
+
+        self._render_product_list(self._all_products)
+
+    def _render_product_list(self, products):
+        """Renderiza una lista de dicts de productos en el QListWidget."""
+        self.products_list.setUpdatesEnabled(False)
+        self.products_list.clear()
+        self.product_name_label.setText("")
+        self.product_name_label.hide()
+
+        for product in products:
+            item_text = f"{product['name']}   $ {int(product['price'])}"
+            item = QListWidgetItem(item_text)
+            item.setData(Qt.UserRole, product)
+            self.products_list.addItem(item)
+
+        self.products_list.setUpdatesEnabled(True)
+        self.products_list.repaint()
 
     def add_product_to_cart(self, item):
 
         product = item.data(Qt.UserRole)
-        db = SessionLocal()
+        product_id = product["id"]
 
+        db = SessionLocal()
         try:
-            db_product = db.query(Product).filter(Product.id == product.id).first()
+            db_product = db.query(Product).filter(Product.id == product_id).first()
 
             if not db_product or db_product.stock <= 0:
-                self.show_message("Sin stock", f"{product.name} no tiene stock disponible")
+                self.show_message("Sin stock", f"{product['name']} no tiene stock disponible")
                 return
 
             for cart_item in self.cart:
-                if cart_item["id"] == product.id:
+                if cart_item["id"] == product_id:
                     if cart_item["quantity"] >= db_product.stock:
-                        self.show_message("Sin stock", f"{product.name} solo tiene {int(db_product.stock)} unidades disponibles")
+                        self.show_message("Sin stock", f"{product['name']} solo tiene {int(db_product.stock)} unidades disponibles")
                         return
                     cart_item["quantity"] += 1
                     self.refresh_cart()
                     return
 
             self.cart.append({
-                "id": product.id,
-                "name": product.name,
-                "price": float(product.price),
+                "id": product_id,
+                "name": product["name"],
+                "price": product["price"],
                 "quantity": 1
             })
             self.refresh_cart()
@@ -380,7 +490,6 @@ class SalesPage(QWidget):
         db = SessionLocal()
 
         try:
-            # Buscar por barcode o por nombre
             product = db.query(Product).filter(
                 Product.barcode == barcode,
                 Product.is_active == True
@@ -549,7 +658,6 @@ class SalesPage(QWidget):
 
         total = self.get_total()
 
-        # ── Bucle de pago ─────────────────────────────
         while True:
 
             dialog = PaymentDialog(total, parent=self)
