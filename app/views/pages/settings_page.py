@@ -29,6 +29,10 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 from app.assets.themes.theme import PRIMARY_COLOR, INPUT_STYLE, BUTTON_STYLE
 from app.database.database import SessionLocal, reload_engine, test_connection, get_db_mode
+from app.utils.license_manager import (
+    validate_license, save_license, load_license,
+    get_current_plan, get_plan_limits,
+)
 from app.models.settings_model import Setting
 from app.models.user_model import User
 from app.components.collapsible_section import CollapsibleSection
@@ -112,6 +116,96 @@ class SettingsPage(QWidget):
         content = QWidget()
         content_layout = QVBoxLayout()
         content_layout.setSpacing(12)
+
+        # ── Licencia ──────────────────────────────────
+        license_widget = QWidget()
+        license_layout = QVBoxLayout()
+        license_layout.setContentsMargins(16, 16, 16, 16)
+        license_layout.setSpacing(14)
+
+        # Estado actual
+        plan_info = get_current_plan()
+        if plan_info["plan"] == "SARA+":
+            status_color = "#DCFCE7"
+            status_border = "#86EFAC"
+            status_text_color = "#166534"
+            status_icon = "✅"
+        else:
+            status_color = "#FEF3C7"
+            status_border = "#F59E0B"
+            status_text_color = "#92400E"
+            status_icon = "⚠️"
+
+        self.license_status_label = QLabel(f"{status_icon}  {plan_info['message']}")
+        self.license_status_label.setStyleSheet(
+            f"font-size: 13px; color: {status_text_color}; background-color: {status_color}; "
+            f"border-radius: 8px; padding: 12px; border: 1px solid {status_border};"
+        )
+        self.license_status_label.setWordWrap(True)
+        license_layout.addWidget(self.license_status_label)
+
+        # Campo de clave
+        key_label = QLabel("Clave de licencia SARA+:")
+        key_label.setStyleSheet("font-size: 13px; color: #64748B; background: transparent;")
+        license_layout.addWidget(key_label)
+
+        self.license_key_input = self.create_input("SARA-XXXX-XXXX-XXXX-XXXX-XXXX")
+        current_key = load_license()
+        if current_key:
+            self.license_key_input.setText(current_key)
+        license_layout.addWidget(self.license_key_input)
+
+        key_hint = QLabel("💡 Ingresá la clave que recibiste al adquirir SARA+. Al vencer, el sistema opera automáticamente en modo FREE.")
+        key_hint.setStyleSheet("font-size: 12px; color: #94A3B8; background: transparent;")
+        key_hint.setWordWrap(True)
+        license_layout.addWidget(key_hint)
+
+        license_btn_row = QHBoxLayout()
+        license_btn_row.setSpacing(12)
+
+        btn_activate = QPushButton("Activar licencia")
+        btn_activate.setMinimumHeight(48)
+        btn_activate.setStyleSheet(BUTTON_STYLE)
+        btn_activate.clicked.connect(self.activate_license)
+
+        btn_remove_license = QPushButton("Eliminar clave")
+        btn_remove_license.setMinimumHeight(48)
+        btn_remove_license.setStyleSheet("""
+            QPushButton {
+                background-color: white;
+                color: #DC2626;
+                border: 2px solid #DC2626;
+                border-radius: 12px;
+                font-size: 15px;
+                font-weight: bold;
+                padding: 10px;
+            }
+            QPushButton:hover { background-color: #FEF2F2; }
+        """)
+        btn_remove_license.clicked.connect(self.remove_license)
+
+        license_btn_row.addWidget(btn_activate)
+        license_btn_row.addWidget(btn_remove_license)
+        license_layout.addLayout(license_btn_row)
+
+        # Límites del plan activo
+        sep_lic = QFrame()
+        sep_lic.setFrameShape(QFrame.HLine)
+        sep_lic.setStyleSheet("color: #E2E8F0; margin: 4px 0;")
+        license_layout.addWidget(sep_lic)
+
+        limits_title = QLabel("Límites del plan activo:")
+        limits_title.setStyleSheet("font-size: 13px; font-weight: bold; color: #1E293B; background: transparent;")
+        license_layout.addWidget(limits_title)
+
+        self.license_limits_label = QLabel()
+        self.license_limits_label.setStyleSheet("font-size: 12px; color: #64748B; background: transparent;")
+        self.license_limits_label.setWordWrap(True)
+        license_layout.addWidget(self.license_limits_label)
+        self._update_license_limits_label()
+
+        license_widget.setLayout(license_layout)
+        content_layout.addWidget(CollapsibleSection("Licencia", license_widget))
 
         # ── Negocio ───────────────────────────────────
         business_widget = QWidget()
@@ -812,6 +906,101 @@ class SettingsPage(QWidget):
         self.load_settings()
         self.load_users()
         self.check_auto_backup()
+
+    # ── Licencia ──────────────────────────────────────
+
+    def remove_license(self):
+        reply = QMessageBox(self)
+        reply.setWindowTitle("Eliminar licencia")
+        reply.setText(
+            "¿Estás seguro que querés eliminar la clave de licencia?\n\n"
+            "El sistema volverá a operar en modo FREE."
+        )
+        reply.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        reply.setDefaultButton(QMessageBox.No)
+        reply.setStyleSheet("""
+            QMessageBox { background-color: white; }
+            QLabel { color: #1E293B; font-size: 14px; min-width: 350px; }
+            QPushButton {
+                background-color: #4A6A92; color: white; border: none;
+                border-radius: 10px; padding: 10px 20px; min-width: 80px;
+                min-height: 32px; font-size: 13px; font-weight: bold;
+            }
+            QPushButton:hover { background-color: #3D5A80; }
+        """)
+        if reply.exec() != QMessageBox.Yes:
+            return
+
+        from app.utils.license_manager import _get_license_path
+        import os
+        path = _get_license_path()
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+            self.license_key_input.clear()
+            self.license_status_label.setStyleSheet(
+                "font-size: 13px; color: #92400E; background-color: #FEF3C7; "
+                "border-radius: 8px; padding: 12px; border: 1px solid #F59E0B;"
+            )
+            self.license_status_label.setText("⚠️  Sin licencia activa. Operando en modo FREE.")
+            self._update_license_limits_label()
+            self.show_message("OK", "Licencia eliminada. El sistema opera en modo FREE.")
+        except Exception as e:
+            self.show_message("Error", f"Error al eliminar la licencia:\n{str(e)}")
+
+    def activate_license(self):
+        key = self.license_key_input.text().strip()
+        if not key:
+            self.show_message("Error", "Ingresá una clave de licencia")
+            return
+
+        result = validate_license(key)
+
+        if result["valid"]:
+            save_license(key)
+            self.license_status_label.setStyleSheet(
+                "font-size: 13px; color: #166534; background-color: #DCFCE7; "
+                "border-radius: 8px; padding: 12px; border: 1px solid #86EFAC;"
+            )
+            self.license_status_label.setText(f"✅  {result['message']}")
+            self._update_license_limits_label()
+            self.show_message("✅ Licencia activada", result["message"])
+        else:
+            # Clave inválida o vencida — guardar igual para mostrar el estado
+            save_license(key)
+            self.license_status_label.setStyleSheet(
+                "font-size: 13px; color: #92400E; background-color: #FEF3C7; "
+                "border-radius: 8px; padding: 12px; border: 1px solid #F59E0B;"
+            )
+            self.license_status_label.setText(f"⚠️  {result['message']}")
+            self._update_license_limits_label()
+            self.show_message("Licencia no válida", result["message"])
+
+    def _update_license_limits_label(self):
+        limits = get_plan_limits()
+        plan = get_current_plan()["plan"]
+
+        productos = "Ilimitados" if limits["max_products"] is None else str(limits["max_products"])
+        clientes = "Ilimitados" if limits["max_clients"] is None else str(limits["max_clients"])
+        usuarios = "Ilimitados" if limits["max_users"] is None else str(limits["max_users"])
+
+        def si_no(val):
+            return "✅ Incluido" if val else "❌ No incluido"
+
+        texto = (
+            f"Plan activo: {plan}\n"
+            f"• Productos: {productos}\n"
+            f"• Clientes: {clientes}\n"
+            f"• Usuarios: {usuarios}\n"
+            f"• Proveedores: {si_no(limits['suppliers'])}\n"
+            f"• Reportes: {si_no(limits['reports'])}\n"
+            f"• Email: {si_no(limits['email'])}\n"
+            f"• Backup: {si_no(limits['backup'])}\n"
+            f"• Factura electrónica ARCA: {si_no(limits['arca'])}\n"
+            f"• Multi-PC PostgreSQL: {si_no(limits['postgresql'])}\n"
+            f"• Marca de agua en tickets: {'Sí' if limits['ticket_watermark'] else 'No'}"
+        )
+        self.license_limits_label.setText(texto)
 
     # ── Helpers UI ────────────────────────────────────
 
