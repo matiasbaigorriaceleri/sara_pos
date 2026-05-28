@@ -11,6 +11,9 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QHeaderView,
     QFileDialog,
+    QDialog,
+    QComboBox,
+    QSpinBox,
 )
 
 from app.database.database import SessionLocal
@@ -23,11 +26,214 @@ from app.assets.themes.theme import (
     INPUT_STYLE,
 )
 
+BUTTON_STYLE_BLUE = """
+QPushButton {
+    background-color: #4A6A92;
+    color: white;
+    border: none;
+    border-radius: 14px;
+    font-size: 18px;
+    font-weight: bold;
+}
+QPushButton:hover { background-color: #3D5A80; }
+"""
+
+BUTTON_STYLE_RED = """
+QPushButton {
+    background-color: #FF003D;
+    color: white;
+    border: none;
+    border-radius: 14px;
+    font-size: 18px;
+    font-weight: bold;
+}
+QPushButton:hover { background-color: #D90429; }
+"""
+
+BUTTON_STYLE_GREEN = """
+QPushButton {
+    background-color: #16A34A;
+    color: white;
+    border: none;
+    border-radius: 14px;
+    font-size: 18px;
+    font-weight: bold;
+}
+QPushButton:hover { background-color: #15803D; }
+"""
+
+
+# ── Diálogo de ajuste de stock ────────────────────────
+
+class StockAdjustDialog(QDialog):
+
+    def __init__(self, product_name, current_stock, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Ajustar stock")
+        self.setMinimumWidth(420)
+        self.setStyleSheet("background-color: white;")
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(16)
+
+        # Producto
+        title = QLabel(f"Ajuste de stock")
+        title.setStyleSheet(f"font-size: 20px; font-weight: bold; color: #4A6A92;")
+        layout.addWidget(title)
+
+        product_label = QLabel(f"Producto: {product_name}")
+        product_label.setStyleSheet("font-size: 14px; color: #64748B;")
+        layout.addWidget(product_label)
+
+        stock_label = QLabel(f"Stock actual: {int(current_stock)}")
+        stock_label.setStyleSheet("font-size: 14px; font-weight: bold; color: #1E293B;")
+        layout.addWidget(stock_label)
+
+        # Tipo de ajuste
+        tipo_label = QLabel("Tipo de ajuste:")
+        tipo_label.setStyleSheet("font-size: 13px; color: #64748B;")
+        layout.addWidget(tipo_label)
+
+        self.tipo_combo = QComboBox()
+        self.tipo_combo.addItems([
+            "➕  Entrada de mercadería",
+            "➖  Salida / merma",
+            "📋  Corrección de inventario",
+        ])
+        self.tipo_combo.setMinimumHeight(48)
+        self.tipo_combo.setStyleSheet("""
+            QComboBox {
+                background-color: white;
+                border: 2px solid #B8C4D0;
+                border-radius: 12px;
+                padding: 10px 14px;
+                font-size: 14px;
+                color: #1E293B;
+            }
+            QComboBox::drop-down { border: none; }
+            QComboBox QAbstractItemView {
+                background-color: white;
+                color: #1E293B;
+                selection-background-color: #D8E6F5;
+            }
+        """)
+        layout.addWidget(self.tipo_combo)
+
+        # Cantidad
+        cant_label = QLabel("Cantidad:")
+        cant_label.setStyleSheet("font-size: 13px; color: #64748B;")
+        layout.addWidget(cant_label)
+
+        self.cantidad_spin = QSpinBox()
+        self.cantidad_spin.setMinimum(1)
+        self.cantidad_spin.setMaximum(999999)
+        self.cantidad_spin.setValue(1)
+        self.cantidad_spin.setMinimumHeight(50)
+        self.cantidad_spin.setStyleSheet("""
+            QSpinBox {
+                background-color: white;
+                border: 2px solid #B8C4D0;
+                border-radius: 12px;
+                padding: 8px 14px;
+                font-size: 16px;
+                color: #1E293B;
+            }
+        """)
+        layout.addWidget(self.cantidad_spin)
+
+        # Motivo
+        motivo_label = QLabel("Motivo (opcional):")
+        motivo_label.setStyleSheet("font-size: 13px; color: #64748B;")
+        layout.addWidget(motivo_label)
+
+        self.motivo_input = QLineEdit()
+        self.motivo_input.setPlaceholderText("Ej: Compra a proveedor, Rotura, Inventario físico...")
+        self.motivo_input.setMinimumHeight(48)
+        self.motivo_input.setStyleSheet(INPUT_STYLE)
+        layout.addWidget(self.motivo_input)
+
+        # Resultado previsualizado
+        self.resultado_label = QLabel("")
+        self.resultado_label.setStyleSheet(
+            "font-size: 13px; color: #4A6A92; background-color: #EFF6FF; "
+            "border-radius: 8px; padding: 8px; border: 1px solid #BFDBFE;"
+        )
+        layout.addWidget(self.resultado_label)
+
+        # Botones
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(12)
+
+        btn_cancel = QPushButton("Cancelar")
+        btn_cancel.setFixedHeight(48)
+        btn_cancel.setStyleSheet("""
+            QPushButton {
+                background-color: white;
+                color: #4A6A92;
+                border: 2px solid #4A6A92;
+                border-radius: 12px;
+                font-size: 14px;
+                font-weight: bold;
+            }
+            QPushButton:hover { background-color: #EFF6FF; }
+        """)
+        btn_cancel.clicked.connect(self.reject)
+
+        btn_confirm = QPushButton("Confirmar ajuste")
+        btn_confirm.setFixedHeight(48)
+        btn_confirm.setStyleSheet("""
+            QPushButton {
+                background-color: #4A6A92;
+                color: white;
+                border: none;
+                border-radius: 12px;
+                font-size: 14px;
+                font-weight: bold;
+            }
+            QPushButton:hover { background-color: #3D5A80; }
+        """)
+        btn_confirm.clicked.connect(self.accept)
+
+        btn_row.addWidget(btn_cancel)
+        btn_row.addWidget(btn_confirm)
+        layout.addLayout(btn_row)
+
+        # Asignar ANTES de conectar señales que llaman a _update_preview
+        self.current_stock = current_stock
+
+        self.tipo_combo.currentIndexChanged.connect(self._update_preview)
+        self.cantidad_spin.valueChanged.connect(self._update_preview)
+        self._update_preview()
+
+    def _update_preview(self):
+        tipo = self.tipo_combo.currentIndex()
+        cantidad = self.cantidad_spin.value()
+
+        if tipo == 0:  # Entrada
+            nuevo = self.current_stock + cantidad
+            self.resultado_label.setText(f"Stock resultante: {int(self.current_stock)} + {cantidad} = {int(nuevo)}")
+        elif tipo == 1:  # Salida
+            nuevo = max(0, self.current_stock - cantidad)
+            self.resultado_label.setText(f"Stock resultante: {int(self.current_stock)} - {cantidad} = {int(nuevo)}")
+        else:  # Corrección
+            self.resultado_label.setText(f"Stock resultante: {cantidad} (reemplaza el valor actual de {int(self.current_stock)})")
+
+    def get_values(self):
+        return {
+            "tipo": self.tipo_combo.currentIndex(),  # 0=entrada, 1=salida, 2=corrección
+            "cantidad": self.cantidad_spin.value(),
+            "motivo": self.motivo_input.text().strip(),
+        }
+
+
+# ── Página principal ──────────────────────────────────
 
 class ProductsPage(QWidget):
 
     def __init__(self):
         super().__init__()
+        self._selected_row = -1
         self.setup_ui()
         self.load_products()
 
@@ -100,30 +306,6 @@ class ProductsPage(QWidget):
         row3.addWidget(self.cost_input)
         form_layout.addLayout(row3)
 
-        BUTTON_STYLE_BLUE = """
-        QPushButton {
-            background-color: #4A6A92;
-            color: white;
-            border: none;
-            border-radius: 14px;
-            font-size: 18px;
-            font-weight: bold;
-        }
-        QPushButton:hover { background-color: #3D5A80; }
-        """
-
-        BUTTON_STYLE_RED = """
-        QPushButton {
-            background-color: #FF003D;
-            color: white;
-            border: none;
-            border-radius: 14px;
-            font-size: 18px;
-            font-weight: bold;
-        }
-        QPushButton:hover { background-color: #D90429; }
-        """
-
         buttons_layout = QHBoxLayout()
         buttons_layout.setSpacing(15)
 
@@ -142,6 +324,11 @@ class ProductsPage(QWidget):
         self.delete_button.setStyleSheet(BUTTON_STYLE_RED)
         self.delete_button.clicked.connect(self.delete_product)
 
+        self.stock_button = QPushButton("Ajustar stock")
+        self.stock_button.setFixedHeight(60)
+        self.stock_button.setStyleSheet(BUTTON_STYLE_GREEN)
+        self.stock_button.clicked.connect(self.adjust_stock)
+
         self.import_button = QPushButton("Importar")
         self.import_button.setFixedHeight(60)
         self.import_button.setStyleSheet(BUTTON_STYLE_BLUE)
@@ -155,6 +342,7 @@ class ProductsPage(QWidget):
         buttons_layout.addWidget(self.save_button)
         buttons_layout.addWidget(self.update_button)
         buttons_layout.addWidget(self.delete_button)
+        buttons_layout.addWidget(self.stock_button)
         buttons_layout.addWidget(self.import_button)
         buttons_layout.addWidget(self.export_button)
 
@@ -237,7 +425,6 @@ class ProductsPage(QWidget):
 
         db = SessionLocal()
         try:
-            # ── Verificar límite del plan ──────────────
             current_count = db.query(Product).filter(Product.is_active == True).count()
             allowed, limit_msg = check_limit("products", current_count)
             if not allowed:
@@ -378,11 +565,67 @@ class ProductsPage(QWidget):
         finally:
             db.close()
 
+    def adjust_stock(self):
+
+        if self._selected_row < 0:
+            self.show_message("Error", "Seleccione un producto de la tabla primero")
+            return
+
+        product_code = self.table.item(self._selected_row, 0).text()
+        product_name = self.table.item(self._selected_row, 1).text()
+
+        try:
+            current_stock = float(self.table.item(self._selected_row, 3).text())
+        except Exception:
+            current_stock = 0
+
+        dialog = StockAdjustDialog(product_name, current_stock, parent=self)
+        if dialog.exec() != QDialog.Accepted:
+            return
+
+        values = dialog.get_values()
+        tipo = values["tipo"]
+        cantidad = values["cantidad"]
+
+        db = SessionLocal()
+        try:
+            product = db.query(Product).filter(Product.product_code == product_code).first()
+            if not product:
+                self.show_message("Error", "Producto no encontrado")
+                return
+
+            stock_anterior = product.stock
+
+            if tipo == 0:  # Entrada
+                product.stock = stock_anterior + cantidad
+            elif tipo == 1:  # Salida
+                product.stock = max(0, stock_anterior - cantidad)
+            else:  # Corrección
+                product.stock = cantidad
+
+            db.commit()
+
+            tipos_texto = ["Entrada", "Salida", "Corrección"]
+            self.show_message(
+                "✅ Stock ajustado",
+                f"Producto: {product_name}\n"
+                f"Tipo: {tipos_texto[tipo]}\n"
+                f"Stock anterior: {int(stock_anterior)}\n"
+                f"Stock nuevo: {int(product.stock)}"
+            )
+            self.load_products()
+            self.clear_form()
+
+        except Exception as e:
+            db.rollback()
+            self.show_message("Error", str(e))
+        finally:
+            db.close()
+
     def import_products(self):
 
         import pandas as pd
 
-        # ── Verificar límite antes de importar ────────
         db = SessionLocal()
         try:
             current_count = db.query(Product).filter(Product.is_active == True).count()
@@ -426,7 +669,6 @@ class ProductsPage(QWidget):
             max_products = limits.get("max_products")
 
             for _, row in df.iterrows():
-                # Respetar límite durante la importación
                 if max_products is not None and (current_count + imported) >= max_products:
                     skipped += len(df) - imported - skipped
                     break
@@ -469,10 +711,10 @@ class ProductsPage(QWidget):
             self.load_products()
             self.clear_form()
 
-            msg = f"Importados: {imported} | Omitidos: {skipped}"
+            msg_text = f"Importados: {imported} | Omitidos: {skipped}"
             if max_products is not None and (current_count + imported) >= max_products:
-                msg += f"\n⚠️ Límite FREE de {max_products} productos alcanzado. Activá SARA+ para importar más."
-            self.show_message("OK", msg)
+                msg_text += f"\n⚠️ Límite FREE de {max_products} productos alcanzado. Activá SARA+ para importar más."
+            self.show_message("OK", msg_text)
 
         except Exception as e:
             db.rollback()
@@ -516,6 +758,7 @@ class ProductsPage(QWidget):
             db.close()
 
     def select_product(self, row):
+        self._selected_row = row
         self.code_input.setText(self.table.item(row, 0).text())
         self.name_input.setText(self.table.item(row, 1).text())
         self.barcode_input.setText(self.table.item(row, 2).text())
@@ -524,6 +767,7 @@ class ProductsPage(QWidget):
         self.category_input.setText(self.table.item(row, 5).text())
 
     def clear_form(self):
+        self._selected_row = -1
         self.name_input.clear()
         self.detail_input.clear()
         self.barcode_input.clear()
