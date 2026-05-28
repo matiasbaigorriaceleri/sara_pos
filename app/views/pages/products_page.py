@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
 
 from app.database.database import SessionLocal
 from app.models.product_model import Product
+from app.utils.license_manager import check_limit
 
 from app.assets.themes.theme import (
     PRIMARY_COLOR,
@@ -205,7 +206,7 @@ class ProductsPage(QWidget):
                     current_code = int(product.product_code)
                     if current_code > max_code:
                         max_code = current_code
-                except:
+                except Exception:
                     pass
         finally:
             db.close()
@@ -236,6 +237,13 @@ class ProductsPage(QWidget):
 
         db = SessionLocal()
         try:
+            # ── Verificar límite del plan ──────────────
+            current_count = db.query(Product).filter(Product.is_active == True).count()
+            allowed, limit_msg = check_limit("products", current_count)
+            if not allowed:
+                self.show_message("Plan FREE — Límite alcanzado", limit_msg)
+                return
+
             name = self.name_input.text().strip().upper()
             detail = self.detail_input.text().strip().upper()
             barcode = self.barcode_input.text().strip()
@@ -372,7 +380,19 @@ class ProductsPage(QWidget):
 
     def import_products(self):
 
-        import pandas as pd  # ← importado solo cuando se necesita
+        import pandas as pd
+
+        # ── Verificar límite antes de importar ────────
+        db = SessionLocal()
+        try:
+            current_count = db.query(Product).filter(Product.is_active == True).count()
+        finally:
+            db.close()
+
+        allowed, limit_msg = check_limit("products", current_count)
+        if not allowed:
+            self.show_message("Plan FREE — Límite alcanzado", limit_msg)
+            return
 
         file_path, _ = QFileDialog.getOpenFileName(
             self, "Seleccionar archivo", "", "Excel Files (*.xlsx *.xls)"
@@ -394,14 +414,23 @@ class ProductsPage(QWidget):
                     val = int(code)
                     if val > max_code:
                         max_code = val
-                except:
+                except Exception:
                     pass
 
             imported = 0
             skipped = 0
             products_to_add = []
 
+            from app.utils.license_manager import get_plan_limits
+            limits = get_plan_limits()
+            max_products = limits.get("max_products")
+
             for _, row in df.iterrows():
+                # Respetar límite durante la importación
+                if max_products is not None and (current_count + imported) >= max_products:
+                    skipped += len(df) - imported - skipped
+                    break
+
                 name = str(row.get("nombre", "")).strip().upper()
                 detail = str(row.get("detalle", "")).strip().upper()
                 barcode = str(row.get("barcode", "")).strip()
@@ -439,7 +468,11 @@ class ProductsPage(QWidget):
 
             self.load_products()
             self.clear_form()
-            self.show_message("OK", f"Importados: {imported} | Omitidos: {skipped}")
+
+            msg = f"Importados: {imported} | Omitidos: {skipped}"
+            if max_products is not None and (current_count + imported) >= max_products:
+                msg += f"\n⚠️ Límite FREE de {max_products} productos alcanzado. Activá SARA+ para importar más."
+            self.show_message("OK", msg)
 
         except Exception as e:
             db.rollback()
@@ -449,7 +482,7 @@ class ProductsPage(QWidget):
 
     def export_products(self):
 
-        import pandas as pd  # ← importado solo cuando se necesita
+        import pandas as pd
 
         db = SessionLocal()
         try:

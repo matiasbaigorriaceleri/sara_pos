@@ -21,6 +21,7 @@ from app.database.database import SessionLocal
 from app.models.client_model import Client
 from app.models.client_account_model import ClientAccount
 from app.assets.themes.theme import PRIMARY_COLOR, BACKGROUND_COLOR, INPUT_STYLE
+from app.utils.license_manager import check_limit
 from datetime import datetime
 
 BLUE = "QPushButton { background-color: #4A6A92; color: white; border: none; border-radius: 12px; font-size: 15px; font-weight: bold; } QPushButton:hover { background-color: #3D5A80; }"
@@ -347,6 +348,18 @@ class ClientsPage(QWidget):
                 return
         except ValueError:
             self.show_message("Error", "El descuento debe ser un número")
+            return
+
+        # ── Verificar límite del plan ──────────────────
+        db = SessionLocal()
+        try:
+            current_count = db.query(Client).filter(Client.is_active == True).count()
+        finally:
+            db.close()
+
+        allowed, limit_msg = check_limit("clients", current_count)
+        if not allowed:
+            self.show_message("Plan FREE — Límite alcanzado", limit_msg)
             return
 
         db = SessionLocal()

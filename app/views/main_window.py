@@ -70,14 +70,47 @@ class MainWindow(QMainWindow):
         sidebar_layout.setContentsMargins(15, 22, 15, 20)
         sidebar_layout.setSpacing(6)
 
-        logo = QLabel("SARA POS")
-        logo.setStyleSheet("""
+        # ── Logo con plan activo ──────────────────────
+        from app.utils.license_manager import get_current_plan
+        plan_info = get_current_plan()
+        plan = plan_info["plan"]
+
+        logo_name = QLabel("SARA POS")
+        logo_name.setStyleSheet("""
             font-size: 22px;
             font-weight: bold;
             color: white;
-            margin-bottom: 20px;
+            margin-bottom: 2px;
         """)
-        sidebar_layout.addWidget(logo)
+        sidebar_layout.addWidget(logo_name)
+
+        if plan == "SARA+":
+            badge_text = "SARA+"
+            badge_style = """
+                font-size: 11px;
+                font-weight: bold;
+                color: #1E293B;
+                background-color: #FCD34D;
+                border-radius: 6px;
+                padding: 2px 8px;
+                margin-bottom: 16px;
+            """
+        else:
+            badge_text = "FREE"
+            badge_style = """
+                font-size: 11px;
+                font-weight: bold;
+                color: #94A3B8;
+                background-color: #1E3A53;
+                border-radius: 6px;
+                padding: 2px 8px;
+                margin-bottom: 16px;
+            """
+
+        badge = QLabel(badge_text)
+        badge.setStyleSheet(badge_style)
+        badge.setFixedWidth(60)
+        sidebar_layout.addWidget(badge)
 
         self.pages = QStackedWidget()
         self.pages.setStyleSheet(f"background-color: {BACKGROUND_COLOR};")
@@ -187,14 +220,15 @@ class MainWindow(QMainWindow):
                     alerts_suppliers.append(f"• {supplier_name} — {monto} — vence mañana")
 
             accounts = db.query(ClientAccount).filter(ClientAccount.is_paid == False).all()
-            clients = {c.id: c.name for c in db.query(Client).all()}
+            clients = {c.id: c for c in db.query(Client).all()}
             alerts_clients = []
 
             for acc in accounts:
                 if not acc.payment_date:
                     continue
                 acc_date = acc.payment_date.date() if hasattr(acc.payment_date, 'date') else acc.payment_date
-                client_name = clients.get(acc.client_id, "Cliente desconocido")
+                client_name = clients.get(acc.client_id)
+                client_name = client_name.name if client_name else "Cliente desconocido"
                 monto = f"$ {int(acc.amount or 0)}"
                 if acc_date == today:
                     alerts_clients.append(f"• {client_name} — {monto} — COBRAR HOY")
