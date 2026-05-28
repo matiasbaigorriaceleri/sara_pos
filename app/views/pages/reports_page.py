@@ -16,13 +16,14 @@ from PySide6.QtWidgets import (
 )
 
 from PySide6.QtCore import Qt, QDate
-from datetime import datetime, timedelta
+from datetime import datetime
 from app.assets.themes.theme import PRIMARY_COLOR, BACKGROUND_COLOR
 from app.database.database import SessionLocal
 from app.models.ticket_model import Ticket
 from app.models.ticket_item_model import TicketItem
 from app.models.product_model import Product
 from app.models.cash_session_model import CashSession
+from app.utils.license_manager import is_feature_allowed
 
 BLUE = "QPushButton { background-color: #4A6A92; color: white; border: none; border-radius: 12px; font-size: 14px; font-weight: bold; padding: 10px 16px; } QPushButton:hover { background-color: #3D5A80; }"
 DATE_STYLE = """
@@ -39,6 +40,45 @@ DATE_STYLE = """
     QDateEdit::drop-down { border: none; width: 24px; }
     QDateEdit:focus { border: 2px solid #4A6A92; }
 """
+
+
+def _build_locked_screen(parent):
+    """Pantalla de bloqueo para módulos no disponibles en FREE."""
+    widget = QWidget(parent)
+    outer = QVBoxLayout(widget)
+    outer.setContentsMargins(0, 0, 0, 0)
+    outer.setSpacing(0)
+
+    outer.addStretch(2)
+
+    inner = QVBoxLayout()
+    inner.setAlignment(Qt.AlignHCenter)
+    inner.setSpacing(16)
+
+    icon = QLabel("🔒")
+    icon.setStyleSheet("font-size: 56px; background: transparent;")
+    icon.setAlignment(Qt.AlignCenter)
+    inner.addWidget(icon)
+
+    title = QLabel("Reportes — Solo SARA+")
+    title.setStyleSheet("font-size: 22px; font-weight: bold; color: #1E293B; background: transparent;")
+    title.setAlignment(Qt.AlignCenter)
+    inner.addWidget(title)
+
+    desc = QLabel(
+        "El módulo de Reportes no está disponible en el plan FREE.\n"
+        "Activá SARA+ desde Configuración → Licencia para acceder."
+    )
+    desc.setStyleSheet("font-size: 14px; color: #64748B; background: transparent;")
+    desc.setAlignment(Qt.AlignCenter)
+    desc.setWordWrap(True)
+    desc.setMaximumWidth(420)
+    inner.addWidget(desc)
+
+    outer.addLayout(inner)
+    outer.addStretch(3)
+
+    return widget
 
 
 class ReportsPage(QWidget):
@@ -59,6 +99,12 @@ class ReportsPage(QWidget):
         title.setStyleSheet(f"font-size: 34px; font-weight: bold; color: {PRIMARY_COLOR};")
         main_layout.addWidget(title)
 
+        # ── Verificar plan ────────────────────────────
+        if not is_feature_allowed("reports"):
+            main_layout.addWidget(_build_locked_screen(self))
+            return
+
+        # ── Contenido completo (solo SARA+) ───────────
         tabs = QTabWidget()
         tabs.setStyleSheet("""
             QTabWidget::pane { border: none; background: transparent; }
@@ -85,7 +131,6 @@ class ReportsPage(QWidget):
         layout.setContentsMargins(0, 16, 0, 0)
         layout.setSpacing(14)
 
-        # Filtros
         filter_frame = QFrame()
         filter_frame.setStyleSheet("background-color: white; border-radius: 16px;")
         filter_layout = QHBoxLayout(filter_frame)
@@ -336,7 +381,6 @@ class ReportsPage(QWidget):
         for row, ticket in enumerate(tickets):
             self.sales_table.insertRow(row)
             total += ticket.total or 0
-
             self.sales_table.setItem(row, 0, QTableWidgetItem(f"#{ticket.id:05d}"))
             self.sales_table.setItem(row, 1, QTableWidgetItem(
                 ticket.created_at.strftime("%d/%m/%Y %H:%M") if ticket.created_at else ""
@@ -352,139 +396,6 @@ class ReportsPage(QWidget):
         self.sales_total_label.setText(f"Total: $ {int(total)}")
 
     def load_products_report(self):
-
-        from_date, to_date = self.get_date_range(self.prod_from_date, self.prod_to_date)
-
-        db = SessionLocal()
-        try:
-            tickets = db.query(Ticket).filter(
-                Ticket.created_at >= from_date,
-                Ticket.created_at <= to_date
-            ).all()
-
-            ticket_ids = [t.id for t in tickets]
-
-            from collections import defaultdict
-            product_data = defaultdict(lambda: {"qty": 0, "total": 0.0, "name": ""})
-
-            if ticket_ids:
-                items = db.query(TicketItem).filter(
-                    TicketItem.ticket_id.in_(ticket_ids)
-                ).all()
-
-                product_names = {p.id: p.name for p in db.query(Product).all()}
-
-                for item in items:
-                    pid = item.product_id
-                    product_data[pid]["qty"] += item.quantity or 0
-                    product_data[pid]["total"] += item.subtotal or 0
-                    product_data[pid]["name"] = product_names.get(pid, f"Producto #{pid}")
-
-        finally:
-            db.close()
-
-        sorted_products = sorted(
-            product_data.items(),
-            key=lambda x: x[1]["qty"],
-            reverse=True
-        )
-
-        self.products_table.setRowCount(0)
-
-        for pos, (pid, data) in enumerate(sorted_products):
-            row = pos
-            self.products_table.insertRow(row)
-
-            pos_item = QTableWidgetItem(f"#{pos + 1}")
-            pos_item.setTextAlignment(Qt.AlignCenter)
-            self.products_table.setItem(row, 0, pos_item)
-
-            self.products_table.setItem(row, 1, QTableWidgetItem(data["name"]))
-
-            qty_item = QTableWidgetItem(str(int(data["qty"])))
-            qty_item.setTextAlignment(Qt.AlignCenter)
-            self.products_table.setItem(row, 2, qty_item)
-
-            total_item = QTableWidgetItem(f"$ {int(data['total'])}")
-            total_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            self.products_table.setItem(row, 3, total_item)
-
-    def load_cash_report(self):
-
-        from_date, to_date = self.get_date_range(self.cash_from_date, self.cash_to_date)
-
-        db = SessionLocal()
-        try:
-            sessions = db.query(CashSession).filter(
-                CashSession.opened_at >= from_date,
-                CashSession.opened_at <= to_date
-            ).order_by(CashSession.opened_at.desc()).all()
-        finally:
-            db.close()
-
-        self.cash_table.setRowCount(0)
-
-        for row, session in enumerate(sessions):
-            self.cash_table.insertRow(row)
-
-            self.cash_table.setItem(row, 0, QTableWidgetItem(
-                session.opened_at.strftime("%d/%m/%Y %H:%M") if session.opened_at else ""
-            ))
-            self.cash_table.setItem(row, 1, QTableWidgetItem(
-                session.closed_at.strftime("%d/%m/%Y %H:%M") if session.closed_at else "Abierta"
-            ))
-            self.cash_table.setItem(row, 2, QTableWidgetItem(session.username or ""))
-
-            apertura_item = QTableWidgetItem(f"$ {int(session.opening_amount or 0)}")
-            apertura_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            self.cash_table.setItem(row, 3, apertura_item)
-
-            cierre_item = QTableWidgetItem(
-                f"$ {int(session.closing_amount or 0)}" if session.closing_amount else "—"
-            )
-            cierre_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            self.cash_table.setItem(row, 4, cierre_item)
-
-            diff = session.difference or 0
-            diff_item = QTableWidgetItem(f"$ {int(diff)}")
-            diff_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            from PySide6.QtCore import Qt as QtCore
-            diff_item.setForeground(Qt.darkGreen if diff >= 0 else Qt.red)
-            self.cash_table.setItem(row, 5, diff_item)
-
-    # ── Exportar Excel ────────────────────────────────
-
-    def export_sales_report(self):
-        import pandas as pd
-
-        from_date, to_date = self.get_date_range(self.sales_from_date, self.sales_to_date)
-
-        db = SessionLocal()
-        try:
-            tickets = db.query(Ticket).filter(
-                Ticket.created_at >= from_date,
-                Ticket.created_at <= to_date
-            ).order_by(Ticket.created_at.desc()).all()
-        finally:
-            db.close()
-
-        payment_labels = {
-            "cash": "Efectivo", "transfer": "Transferencia",
-            "qr": "QR Mercado Pago", "budget": "Presupuesto",
-        }
-
-        data = [{
-            "N° Ticket": f"#{t.id:05d}",
-            "Fecha": t.created_at.strftime("%d/%m/%Y %H:%M") if t.created_at else "",
-            "Usuario": t.username or "",
-            "Método pago": payment_labels.get(t.payment_method, t.payment_method or ""),
-            "Total": int(t.total or 0),
-        } for t in tickets]
-
-        self._export_to_excel(data, "reporte_ventas.xlsx")
-
-    def export_products_report(self):
-        import pandas as pd
 
         from_date, to_date = self.get_date_range(self.prod_from_date, self.prod_to_date)
 
@@ -512,20 +423,122 @@ class ReportsPage(QWidget):
 
         sorted_products = sorted(product_data.items(), key=lambda x: x[1]["qty"], reverse=True)
 
+        self.products_table.setRowCount(0)
+        for pos, (pid, data) in enumerate(sorted_products):
+            self.products_table.insertRow(pos)
+            pos_item = QTableWidgetItem(f"#{pos + 1}")
+            pos_item.setTextAlignment(Qt.AlignCenter)
+            self.products_table.setItem(pos, 0, pos_item)
+            self.products_table.setItem(pos, 1, QTableWidgetItem(data["name"]))
+            qty_item = QTableWidgetItem(str(int(data["qty"])))
+            qty_item.setTextAlignment(Qt.AlignCenter)
+            self.products_table.setItem(pos, 2, qty_item)
+            total_item = QTableWidgetItem(f"$ {int(data['total'])}")
+            total_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            self.products_table.setItem(pos, 3, total_item)
+
+    def load_cash_report(self):
+
+        from_date, to_date = self.get_date_range(self.cash_from_date, self.cash_to_date)
+
+        db = SessionLocal()
+        try:
+            sessions = db.query(CashSession).filter(
+                CashSession.opened_at >= from_date,
+                CashSession.opened_at <= to_date
+            ).order_by(CashSession.opened_at.desc()).all()
+        finally:
+            db.close()
+
+        self.cash_table.setRowCount(0)
+        for row, session in enumerate(sessions):
+            self.cash_table.insertRow(row)
+            self.cash_table.setItem(row, 0, QTableWidgetItem(
+                session.opened_at.strftime("%d/%m/%Y %H:%M") if session.opened_at else ""
+            ))
+            self.cash_table.setItem(row, 1, QTableWidgetItem(
+                session.closed_at.strftime("%d/%m/%Y %H:%M") if session.closed_at else "Abierta"
+            ))
+            self.cash_table.setItem(row, 2, QTableWidgetItem(session.username or ""))
+            apertura_item = QTableWidgetItem(f"$ {int(session.opening_amount or 0)}")
+            apertura_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            self.cash_table.setItem(row, 3, apertura_item)
+            cierre_item = QTableWidgetItem(
+                f"$ {int(session.closing_amount or 0)}" if session.closing_amount else "—"
+            )
+            cierre_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            self.cash_table.setItem(row, 4, cierre_item)
+            diff = session.difference or 0
+            diff_item = QTableWidgetItem(f"$ {int(diff)}")
+            diff_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            diff_item.setForeground(Qt.darkGreen if diff >= 0 else Qt.red)
+            self.cash_table.setItem(row, 5, diff_item)
+
+    # ── Exportar Excel ────────────────────────────────
+
+    def export_sales_report(self):
+        import pandas as pd
+
+        from_date, to_date = self.get_date_range(self.sales_from_date, self.sales_to_date)
+        db = SessionLocal()
+        try:
+            tickets = db.query(Ticket).filter(
+                Ticket.created_at >= from_date,
+                Ticket.created_at <= to_date
+            ).order_by(Ticket.created_at.desc()).all()
+        finally:
+            db.close()
+
+        payment_labels = {
+            "cash": "Efectivo", "transfer": "Transferencia",
+            "qr": "QR Mercado Pago", "budget": "Presupuesto",
+        }
+        data = [{
+            "N° Ticket": f"#{t.id:05d}",
+            "Fecha": t.created_at.strftime("%d/%m/%Y %H:%M") if t.created_at else "",
+            "Usuario": t.username or "",
+            "Método pago": payment_labels.get(t.payment_method, t.payment_method or ""),
+            "Total": int(t.total or 0),
+        } for t in tickets]
+        self._export_to_excel(data, "reporte_ventas.xlsx")
+
+    def export_products_report(self):
+        import pandas as pd
+
+        from_date, to_date = self.get_date_range(self.prod_from_date, self.prod_to_date)
+        db = SessionLocal()
+        try:
+            tickets = db.query(Ticket).filter(
+                Ticket.created_at >= from_date,
+                Ticket.created_at <= to_date
+            ).all()
+            ticket_ids = [t.id for t in tickets]
+            from collections import defaultdict
+            product_data = defaultdict(lambda: {"qty": 0, "total": 0.0, "name": ""})
+            if ticket_ids:
+                items = db.query(TicketItem).filter(TicketItem.ticket_id.in_(ticket_ids)).all()
+                product_names = {p.id: p.name for p in db.query(Product).all()}
+                for item in items:
+                    pid = item.product_id
+                    product_data[pid]["qty"] += item.quantity or 0
+                    product_data[pid]["total"] += item.subtotal or 0
+                    product_data[pid]["name"] = product_names.get(pid, f"Producto #{pid}")
+        finally:
+            db.close()
+
+        sorted_products = sorted(product_data.items(), key=lambda x: x[1]["qty"], reverse=True)
         data = [{
             "Posición": f"#{pos + 1}",
             "Producto": d["name"],
             "Unidades vendidas": int(d["qty"]),
             "Total facturado": int(d["total"]),
         } for pos, (_, d) in enumerate(sorted_products)]
-
         self._export_to_excel(data, "reporte_productos.xlsx")
 
     def export_cash_report(self):
         import pandas as pd
 
         from_date, to_date = self.get_date_range(self.cash_from_date, self.cash_to_date)
-
         db = SessionLocal()
         try:
             sessions = db.query(CashSession).filter(
@@ -543,7 +556,6 @@ class ReportsPage(QWidget):
             "Monto cierre": int(s.closing_amount or 0) if s.closing_amount else 0,
             "Diferencia": int(s.difference or 0),
         } for s in sessions]
-
         self._export_to_excel(data, "reporte_caja.xlsx")
 
     def _export_to_excel(self, data, default_name):

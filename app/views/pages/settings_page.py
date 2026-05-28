@@ -31,7 +31,7 @@ from app.assets.themes.theme import PRIMARY_COLOR, INPUT_STYLE, BUTTON_STYLE
 from app.database.database import SessionLocal, reload_engine, test_connection, get_db_mode
 from app.utils.license_manager import (
     validate_license, save_license, load_license,
-    get_current_plan, get_plan_limits,
+    get_current_plan, get_plan_limits, is_feature_allowed,
 )
 from app.models.settings_model import Setting
 from app.models.user_model import User
@@ -352,7 +352,8 @@ class SettingsPage(QWidget):
         smtp_layout.addWidget(btn_save_smtp)
 
         smtp_widget.setLayout(smtp_layout)
-        content_layout.addWidget(CollapsibleSection("Email", smtp_widget))
+        if is_feature_allowed("email"):
+            content_layout.addWidget(CollapsibleSection("Email", smtp_widget))
 
         # ── Backup ────────────────────────────────────
         backup_widget = QWidget()
@@ -451,7 +452,8 @@ class SettingsPage(QWidget):
         backup_layout.addWidget(btn_save_backup)
 
         backup_widget.setLayout(backup_layout)
-        content_layout.addWidget(CollapsibleSection("Backup", backup_widget))
+        if is_feature_allowed("backup"):
+            content_layout.addWidget(CollapsibleSection("Backup", backup_widget))
 
         # ── Factura Electrónica ARCA ──────────────────
         arca_widget = QWidget()
@@ -720,7 +722,8 @@ class SettingsPage(QWidget):
         arca_layout.addWidget(btn_save_arca)
 
         arca_widget.setLayout(arca_layout)
-        content_layout.addWidget(CollapsibleSection("Factura Electrónica ARCA", arca_widget))
+        if is_feature_allowed("arca"):
+            content_layout.addWidget(CollapsibleSection("Factura Electrónica ARCA", arca_widget))
 
         # ── Base de datos / Red ───────────────────────
         db_widget = QWidget()
@@ -815,7 +818,8 @@ class SettingsPage(QWidget):
         db_layout.addWidget(btn_save_db)
 
         db_widget.setLayout(db_layout)
-        content_layout.addWidget(CollapsibleSection("Base de datos / Red", db_widget))
+        if is_feature_allowed("postgresql"):
+            content_layout.addWidget(CollapsibleSection("Base de datos / Red", db_widget))
 
         # ── ABM Usuarios ──────────────────────────────
         users_widget = QWidget()

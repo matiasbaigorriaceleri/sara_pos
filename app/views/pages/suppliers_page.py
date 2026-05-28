@@ -21,6 +21,7 @@ from app.database.database import SessionLocal
 from app.models.supplier_model import Supplier
 from app.models.supplier_invoice_model import SupplierInvoice
 from app.assets.themes.theme import PRIMARY_COLOR, BACKGROUND_COLOR, INPUT_STYLE
+from app.utils.license_manager import is_feature_allowed
 from datetime import datetime, date, timedelta
 
 DATE_STYLE = """
@@ -43,13 +44,51 @@ BLUE = "QPushButton { background-color: #4A6A92; color: white; border: none; bor
 RED = "QPushButton { background-color: #FF003D; color: white; border: none; border-radius: 12px; font-size: 15px; font-weight: bold; padding: 10px 16px; } QPushButton:hover { background-color: #D90429; }"
 
 
+def _build_locked_screen(parent, module_name):
+    """Pantalla de bloqueo para módulos no disponibles en FREE."""
+    widget = QWidget(parent)
+    outer = QVBoxLayout(widget)
+    outer.setContentsMargins(0, 0, 0, 0)
+    outer.setSpacing(0)
+
+    outer.addStretch(2)
+
+    inner = QVBoxLayout()
+    inner.setAlignment(Qt.AlignHCenter)
+    inner.setSpacing(16)
+
+    icon = QLabel("🔒")
+    icon.setStyleSheet("font-size: 56px; background: transparent;")
+    icon.setAlignment(Qt.AlignCenter)
+    inner.addWidget(icon)
+
+    title = QLabel(f"{module_name} — Solo SARA+")
+    title.setStyleSheet("font-size: 22px; font-weight: bold; color: #1E293B; background: transparent;")
+    title.setAlignment(Qt.AlignCenter)
+    inner.addWidget(title)
+
+    desc = QLabel(
+        f"El módulo de {module_name} no está disponible en el plan FREE.\n"
+        "Activá SARA+ desde Configuración → Licencia para acceder."
+    )
+    desc.setStyleSheet("font-size: 14px; color: #64748B; background: transparent;")
+    desc.setAlignment(Qt.AlignCenter)
+    desc.setWordWrap(True)
+    desc.setMaximumWidth(420)
+    inner.addWidget(desc)
+
+    outer.addLayout(inner)
+    outer.addStretch(3)
+
+    return widget
+
+
 class SuppliersPage(QWidget):
 
     def __init__(self):
         super().__init__()
         self.selected_supplier_id = None
         self.setup_ui()
-        self.check_payment_alerts()
 
     def setup_ui(self):
 
@@ -63,6 +102,15 @@ class SuppliersPage(QWidget):
         title.setStyleSheet(f"font-size: 34px; font-weight: bold; color: {PRIMARY_COLOR};")
         main_layout.addWidget(title)
 
+        # ── Verificar plan ────────────────────────────
+        if not is_feature_allowed("suppliers"):
+            self._is_locked = True
+            main_layout.addWidget(_build_locked_screen(self, "Proveedores"))
+            return
+
+        self._is_locked = False
+
+        # ── Contenido completo (solo SARA+) ───────────
         tabs = QTabWidget()
         tabs.setStyleSheet("""
             QTabWidget::pane { border: none; background: transparent; }
@@ -78,6 +126,28 @@ class SuppliersPage(QWidget):
         tabs.addTab(self.build_invoices_tab(), "Facturas / Remitos")
 
         main_layout.addWidget(tabs)
+
+        self.check_payment_alerts()
+
+    def load_suppliers(self):
+        """Stub para compatibilidad con main_window cuando el módulo está bloqueado."""
+        if getattr(self, '_is_locked', False):
+            return
+        # Recarga real — solo se llama si la tabla existe
+        db = SessionLocal()
+        try:
+            suppliers = db.query(Supplier).filter(Supplier.is_active == True).all()
+        finally:
+            db.close()
+
+        self.suppliers_table.setRowCount(0)
+        for row, s in enumerate(suppliers):
+            self.suppliers_table.insertRow(row)
+            self.suppliers_table.setItem(row, 0, QTableWidgetItem(str(s.id)))
+            self.suppliers_table.setItem(row, 1, QTableWidgetItem(s.name or ""))
+            self.suppliers_table.setItem(row, 2, QTableWidgetItem(s.contact or ""))
+            self.suppliers_table.setItem(row, 3, QTableWidgetItem(s.phone or ""))
+            self.suppliers_table.setItem(row, 4, QTableWidgetItem(s.email or ""))
 
     # ── Tab ABM Proveedores ───────────────────────────
 
@@ -320,23 +390,6 @@ class SuppliersPage(QWidget):
 
     # ── Lógica Proveedores ────────────────────────────
 
-    def load_suppliers(self):
-
-        db = SessionLocal()
-        try:
-            suppliers = db.query(Supplier).filter(Supplier.is_active == True).all()
-        finally:
-            db.close()
-
-        self.suppliers_table.setRowCount(0)
-        for row, s in enumerate(suppliers):
-            self.suppliers_table.insertRow(row)
-            self.suppliers_table.setItem(row, 0, QTableWidgetItem(str(s.id)))
-            self.suppliers_table.setItem(row, 1, QTableWidgetItem(s.name or ""))
-            self.suppliers_table.setItem(row, 2, QTableWidgetItem(s.contact or ""))
-            self.suppliers_table.setItem(row, 3, QTableWidgetItem(s.phone or ""))
-            self.suppliers_table.setItem(row, 4, QTableWidgetItem(s.email or ""))
-
     def select_supplier(self, row):
 
         self.selected_supplier_id = int(self.suppliers_table.item(row, 0).text())
@@ -526,7 +579,6 @@ class SuppliersPage(QWidget):
 
             invoice.is_paid = True
 
-            # ── Registrar egreso en caja abierta ──────
             from app.models.cash_session_model import CashSession
             from app.models.cash_movement_model import CashMovement
 
