@@ -28,7 +28,7 @@ from PySide6.QtWidgets import (
 
 from PySide6.QtCore import Qt
 from app.assets.themes.theme import PRIMARY_COLOR, INPUT_STYLE, BUTTON_STYLE
-from app.database.database import SessionLocal
+from app.database.database import SessionLocal, reload_engine, test_connection, get_db_mode
 from app.models.settings_model import Setting
 from app.models.user_model import User
 from app.components.collapsible_section import CollapsibleSection
@@ -628,6 +628,101 @@ class SettingsPage(QWidget):
         arca_widget.setLayout(arca_layout)
         content_layout.addWidget(CollapsibleSection("Factura Electrónica ARCA", arca_widget))
 
+        # ── Base de datos / Red ───────────────────────
+        db_widget = QWidget()
+        db_layout = QVBoxLayout()
+        db_layout.setContentsMargins(16, 16, 16, 16)
+        db_layout.setSpacing(14)
+
+        # Aviso
+        db_info = QLabel(
+            "⚙️  Por defecto SARA usa SQLite (base de datos local). "
+            "Activá PostgreSQL para conectar múltiples PCs en red local (SARA+)."
+        )
+        db_info.setStyleSheet(
+            "font-size: 12px; color: #1E3A5F; background-color: #DBEAFE; "
+            "border-radius: 8px; padding: 10px; border: 1px solid #93C5FD;"
+        )
+        db_info.setWordWrap(True)
+        db_layout.addWidget(db_info)
+
+        # Modo
+        mode_label = QLabel("Modo de base de datos:")
+        mode_label.setStyleSheet("font-size: 13px; color: #64748B; background: transparent;")
+        db_layout.addWidget(mode_label)
+
+        self.db_mode_combo = QComboBox()
+        self.db_mode_combo.addItems(["SQLite (local, 1 PC)", "PostgreSQL (red, múltiples PCs)"])
+        self.db_mode_combo.setMinimumHeight(50)
+        self.db_mode_combo.setStyleSheet(self.combo_style())
+        self.db_mode_combo.currentIndexChanged.connect(self.on_db_mode_changed)
+        db_layout.addWidget(self.db_mode_combo)
+
+        # Frame campos PostgreSQL (se oculta si modo SQLite)
+        self.pg_frame = QFrame()
+        self.pg_frame.setStyleSheet("background: transparent;")
+        pg_layout = QVBoxLayout(self.pg_frame)
+        pg_layout.setContentsMargins(0, 0, 0, 0)
+        pg_layout.setSpacing(10)
+
+        sep_pg = QFrame()
+        sep_pg.setFrameShape(QFrame.HLine)
+        sep_pg.setStyleSheet("color: #E2E8F0; margin: 4px 0;")
+        pg_layout.addWidget(sep_pg)
+
+        pg_title = QLabel("Datos de conexión PostgreSQL")
+        pg_title.setStyleSheet("font-size: 14px; font-weight: bold; color: #1E293B; background: transparent;")
+        pg_layout.addWidget(pg_title)
+
+        pg_hint = QLabel(
+            "Instalá PostgreSQL en la PC servidor y creá una base de datos y usuario para SARA+. "
+            "Todas las PCs deben estar en la misma red local."
+        )
+        pg_hint.setStyleSheet("font-size: 12px; color: #94A3B8; background: transparent;")
+        pg_hint.setWordWrap(True)
+        pg_layout.addWidget(pg_hint)
+
+        host_row = QHBoxLayout()
+        host_row.setSpacing(12)
+        self.pg_host_input = self.create_input("IP del servidor (ej: 192.168.1.100)")
+        self.pg_port_input = self.create_input("Puerto (5432)")
+        self.pg_port_input.setMaximumWidth(120)
+        host_row.addWidget(self.pg_host_input, 3)
+        host_row.addWidget(self.pg_port_input, 1)
+        pg_layout.addLayout(host_row)
+
+        self.pg_database_input = self.create_input("Nombre de la base de datos (ej: sara_pos)")
+        pg_layout.addWidget(self.pg_database_input)
+
+        creds_row = QHBoxLayout()
+        creds_row.setSpacing(12)
+        self.pg_user_input = self.create_input("Usuario PostgreSQL (ej: sara)")
+        self.pg_password_input = self.create_input("Contraseña")
+        self.pg_password_input.setEchoMode(QLineEdit.Password)
+        creds_row.addWidget(self.pg_user_input)
+        creds_row.addWidget(self.pg_password_input)
+        pg_layout.addLayout(creds_row)
+
+        # Botón probar conexión
+        btn_test_db = QPushButton("🔌 Probar conexión")
+        btn_test_db.setMinimumHeight(48)
+        btn_test_db.setStyleSheet(BUTTON_STYLE_SECONDARY)
+        btn_test_db.clicked.connect(self.test_db_connection)
+        pg_layout.addWidget(btn_test_db)
+
+        self.pg_frame.setLayout(pg_layout)
+        db_layout.addWidget(self.pg_frame)
+
+        # Botón guardar
+        btn_save_db = QPushButton("Guardar configuración de base de datos")
+        btn_save_db.setMinimumHeight(48)
+        btn_save_db.setStyleSheet(BUTTON_STYLE)
+        btn_save_db.clicked.connect(self.save_db_config)
+        db_layout.addWidget(btn_save_db)
+
+        db_widget.setLayout(db_layout)
+        content_layout.addWidget(CollapsibleSection("Base de datos / Red", db_widget))
+
         # ── ABM Usuarios ──────────────────────────────
         users_widget = QWidget()
         users_layout = QVBoxLayout()
@@ -888,6 +983,23 @@ class SettingsPage(QWidget):
 
     # ── Guardar secciones ─────────────────────────────
 
+        # Base de datos / Red
+        db_mode = get_db_mode()
+        if db_mode == "postgresql":
+            self.db_mode_combo.setCurrentIndex(1)
+        else:
+            self.db_mode_combo.setCurrentIndex(0)
+        self.on_db_mode_changed(self.db_mode_combo.currentIndex())
+
+        # Leer config de db_config.ini para poblar los campos PG
+        from app.database.database import _get_db_config
+        db_cfg = _get_db_config()
+        self.pg_host_input.setText(db_cfg.get("host", "localhost"))
+        self.pg_port_input.setText(db_cfg.get("port", "5432"))
+        self.pg_database_input.setText(db_cfg.get("database", "sara_pos"))
+        self.pg_user_input.setText(db_cfg.get("user", "sara"))
+        self.pg_password_input.setText(db_cfg.get("password", ""))
+
     def save_business(self):
         if self.save_section({
             "business_name": self.business_name_input.text(),
@@ -939,6 +1051,83 @@ class SettingsPage(QWidget):
         destination = qr_folder / "mercadopago_qr.png"
         shutil.copy(file_path, destination)
         self.qr_path_label.setText(str(destination))
+
+    def on_db_mode_changed(self, index):
+        if index == 1:
+            self.pg_frame.show()
+        else:
+            self.pg_frame.hide()
+
+    def test_db_connection(self):
+        config = self._build_pg_config()
+        if not config:
+            return
+        ok, msg = test_connection(config)
+        if ok:
+            self.show_message("✅ Conexión exitosa", f"SARA+ se conectó correctamente a PostgreSQL en:\n{config['host']}:{config['port']}/{config['database']}")
+        else:
+            self.show_message("❌ Error de conexión", f"No se pudo conectar a PostgreSQL:\n\n{msg}\n\nVerificá los datos e intentá de nuevo.")
+
+    def save_db_config(self):
+        mode_index = self.db_mode_combo.currentIndex()
+
+        if mode_index == 0:
+            # SQLite local
+            new_config = {
+                "mode": "sqlite",
+                "host": "localhost",
+                "port": "5432",
+                "database": "sara_pos",
+                "user": "sara",
+                "password": "",
+            }
+        else:
+            # PostgreSQL
+            new_config = self._build_pg_config()
+            if not new_config:
+                return
+
+            # Probar conexión antes de guardar
+            ok, msg = test_connection(new_config)
+            if not ok:
+                self.show_message(
+                    "Error de conexión",
+                    f"No se pudo conectar a PostgreSQL:\n\n{msg}\n\nVerificá los datos antes de guardar."
+                )
+                return
+
+        try:
+            reload_engine(new_config)
+            modo = "SQLite (local)" if new_config["mode"] == "sqlite" else f"PostgreSQL ({new_config['host']}:{new_config['port']})"
+            self.show_message("OK", f"Configuración guardada.\nModo activo: {modo}\n\nLa conexión fue aplicada correctamente.")
+        except Exception as e:
+            self.show_message("Error", f"Error al aplicar la configuración:\n{str(e)}")
+
+    def _build_pg_config(self):
+        host = self.pg_host_input.text().strip()
+        port = self.pg_port_input.text().strip() or "5432"
+        database = self.pg_database_input.text().strip()
+        user = self.pg_user_input.text().strip()
+        password = self.pg_password_input.text().strip()
+
+        if not host:
+            self.show_message("Error", "Ingresá la IP del servidor PostgreSQL")
+            return None
+        if not database:
+            self.show_message("Error", "Ingresá el nombre de la base de datos")
+            return None
+        if not user:
+            self.show_message("Error", "Ingresá el usuario de PostgreSQL")
+            return None
+
+        return {
+            "mode": "postgresql",
+            "host": host,
+            "port": port,
+            "database": database,
+            "user": user,
+            "password": password,
+        }
 
     def save_arca_config(self):
         umbral = self.arca_umbral_input.text().strip()

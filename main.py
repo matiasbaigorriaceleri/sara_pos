@@ -26,27 +26,33 @@ from app.models.cash_movement_model import CashMovement
 from app.views.login_window import LoginWindow
 
 # ── Crear tablas ──────────────────────────────────────
+# Funciona tanto con SQLite como con PostgreSQL.
+# El engine ya fue configurado en database.py según db_config.ini
 Base.metadata.create_all(bind=engine)
 
 # ── Crear usuario admin por defecto ───────────────────
 db = SessionLocal()
 
-admin_user = db.query(User).filter(
-    User.username == "admin"
-).first()
+try:
+    admin_user = db.query(User).filter(
+        User.username == "admin"
+    ).first()
 
-if not admin_user:
-    hashed = bcrypt.hashpw("123".encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-    user = User(
-        username="admin",
-        password=hashed,
-        role="ADMIN",
-        is_active=True
-    )
-    db.add(user)
-    db.commit()
-
-db.close()
+    if not admin_user:
+        hashed = bcrypt.hashpw("123".encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        user = User(
+            username="admin",
+            password=hashed,
+            role="ADMIN",
+            is_active=True
+        )
+        db.add(user)
+        db.commit()
+except Exception as e:
+    db.rollback()
+    print(f"[SARA] Advertencia al crear usuario admin: {e}")
+finally:
+    db.close()
 
 # ── Iniciar app ───────────────────────────────────────
 app = QApplication(sys.argv)

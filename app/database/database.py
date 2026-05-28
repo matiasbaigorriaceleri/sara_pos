@@ -1,27 +1,162 @@
 import os
 import sys
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-# ── Ruta base: funciona en desarrollo Y compilado ─────
-if getattr(sys, 'frozen', False):
-    _BASE_DIR = os.path.dirname(sys.executable)
-else:
-    _BASE_DIR = os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "..", "..")
-    )
+Base = declarative_base()
 
-DATABASE_URL = f"sqlite:///{os.path.join(_BASE_DIR, 'database.db')}"
+# ── Ruta base para SQLite ─────────────────────────────
+def _get_sqlite_path():
+    if getattr(sys, 'frozen', False):
+        base = os.path.dirname(sys.executable)
+    else:
+        base = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "..", "..")
+        )
+    return os.path.join(base, "database.db")
 
-engine = create_engine(
-    DATABASE_URL,
-    echo=False
-)
+
+def _get_db_config():
+    """
+    Lee la configuración de conexión desde el archivo db_config.ini
+    ubicado junto al ejecutable o en la raíz del proyecto.
+    Devuelve un dict con los valores.
+    """
+    if getattr(sys, 'frozen', False):
+        base = os.path.dirname(sys.executable)
+    else:
+        base = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "..", "..")
+        )
+
+    config_path = os.path.join(base, "db_config.ini")
+
+    config = {
+        "mode": "sqlite",       # sqlite | postgresql
+        "host": "localhost",
+        "port": "5432",
+        "database": "sara_pos",
+        "user": "sara",
+        "password": "",
+    }
+
+    if not os.path.exists(config_path):
+        return config
+
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if "=" in line:
+                    key, _, value = line.partition("=")
+                    key = key.strip().lower()
+                    value = value.strip()
+                    if key in config:
+                        config[key] = value
+    except Exception:
+        pass
+
+    return config
+
+
+def _build_engine(config):
+    if config["mode"] == "postgresql":
+        url = (
+            f"postgresql+psycopg2://{config['user']}:{config['password']}"
+            f"@{config['host']}:{config['port']}/{config['database']}"
+        )
+        return create_engine(
+            url,
+            echo=False,
+            pool_size=5,
+            max_overflow=10,
+            pool_pre_ping=True,   # detecta conexiones caídas automáticamente
+        )
+    else:
+        sqlite_path = _get_sqlite_path()
+        url = f"sqlite:///{sqlite_path}"
+        return create_engine(url, echo=False)
+
+
+# ── Inicialización ────────────────────────────────────
+_config = _get_db_config()
+engine = _build_engine(_config)
 
 SessionLocal = sessionmaker(
     autocommit=False,
     autoflush=False,
-    bind=engine
+    bind=engine,
 )
 
-Base = declarative_base()
+DATABASE_MODE = _config["mode"]
+
+
+def get_db_mode():
+    """Devuelve 'sqlite' o 'postgresql'."""
+    return DATABASE_MODE
+
+
+def reload_engine(new_config):
+    """
+    Reconstruye el engine y SessionLocal con una nueva configuración.
+    Se llama desde Configuración cuando el usuario guarda cambios de BD.
+    También guarda la configuración en db_config.ini.
+    """
+    global engine, SessionLocal, DATABASE_MODE, _config
+
+    _save_db_config(new_config)
+
+    engine = _build_engine(new_config)
+    SessionLocal = sessionmaker(
+        autocommit=False,
+        autoflush=False,
+        bind=engine,
+    )
+    DATABASE_MODE = new_config["mode"]
+    _config = new_config
+
+    # Crear tablas si no existen (necesario al conectar a una BD nueva)
+    Base.metadata.create_all(bind=engine)
+
+
+def _save_db_config(config):
+    """Guarda la configuración en db_config.ini."""
+    if getattr(sys, 'frozen', False):
+        base = os.path.dirname(sys.executable)
+    else:
+        base = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "..", "..")
+        )
+
+    config_path = os.path.join(base, "db_config.ini")
+
+    lines = [
+        "# Configuración de base de datos SARA+\n",
+        "# mode: sqlite | postgresql\n",
+        f"mode={config['mode']}\n",
+        f"host={config['host']}\n",
+        f"port={config['port']}\n",
+        f"database={config['database']}\n",
+        f"user={config['user']}\n",
+        f"password={config['password']}\n",
+    ]
+
+    with open(config_path, "w", encoding="utf-8") as f:
+        f.writelines(lines)
+
+
+def test_connection(config):
+    """
+    Prueba la conexión con la configuración dada.
+    Devuelve (True, "OK") o (False, "mensaje de error").
+    """
+    try:
+        test_engine = _build_engine(config)
+        with test_engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        test_engine.dispose()
+        return True, "Conexión exitosa"
+    except Exception as e:
+        return False, str(e)
