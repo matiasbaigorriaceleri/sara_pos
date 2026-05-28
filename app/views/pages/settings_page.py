@@ -1,8 +1,11 @@
+import os
+import sys
 import bcrypt
-from pathlib import Path
 import shutil
 import subprocess
 import platform
+from pathlib import Path
+from datetime import datetime
 
 from PySide6.QtWidgets import (
     QWidget,
@@ -19,6 +22,8 @@ from PySide6.QtWidgets import (
     QTableWidgetItem,
     QHeaderView,
     QComboBox,
+    QSpinBox,
+    QCheckBox,
 )
 
 from PySide6.QtCore import Qt
@@ -61,6 +66,14 @@ def get_installed_printers():
 
 def hash_password(password):
     return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+
+def get_db_path():
+    if getattr(sys, 'frozen', False):
+        base = os.path.dirname(sys.executable)
+    else:
+        base = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+    return os.path.join(base, "database.db")
 
 
 class SettingsPage(QWidget):
@@ -126,8 +139,7 @@ class SettingsPage(QWidget):
         self.printer_combo = QComboBox()
         self.printer_combo.setMinimumHeight(50)
         self.printer_combo.setStyleSheet(self.combo_style())
-        printers = get_installed_printers()
-        self.printer_combo.addItems(printers)
+        self.printer_combo.addItems(get_installed_printers())
         printer_layout.addWidget(self.printer_combo)
 
         btn_refresh = QPushButton("Actualizar lista de impresoras")
@@ -212,12 +224,10 @@ class SettingsPage(QWidget):
         manual_layout = QVBoxLayout(self.smtp_manual_frame)
         manual_layout.setContentsMargins(0, 0, 0, 0)
         manual_layout.setSpacing(10)
-
-        self.smtp_host_input = self.create_input("Servidor SMTP (ej: smtp.tudominio.com)")
+        self.smtp_host_input = self.create_input("Servidor SMTP")
         manual_layout.addWidget(self.smtp_host_input)
         self.smtp_port_input = self.create_input("Puerto (ej: 587)")
         manual_layout.addWidget(self.smtp_port_input)
-
         self.smtp_manual_frame.hide()
         smtp_layout.addWidget(self.smtp_manual_frame)
 
@@ -234,6 +244,126 @@ class SettingsPage(QWidget):
 
         smtp_widget.setLayout(smtp_layout)
         content_layout.addWidget(CollapsibleSection("Email", smtp_widget))
+
+        # ── Backup ────────────────────────────────────
+        backup_widget = QWidget()
+        backup_layout = QVBoxLayout()
+        backup_layout.setContentsMargins(16, 16, 16, 16)
+        backup_layout.setSpacing(12)
+
+        # Backup manual
+        manual_backup_label = QLabel("Backup manual")
+        manual_backup_label.setStyleSheet("font-size: 15px; font-weight: bold; color: #1E293B; background: transparent;")
+        backup_layout.addWidget(manual_backup_label)
+
+        manual_backup_desc = QLabel("Guardá una copia de seguridad de la base de datos en la carpeta que elijas.")
+        manual_backup_desc.setStyleSheet("font-size: 13px; color: #64748B; background: transparent;")
+        manual_backup_desc.setWordWrap(True)
+        backup_layout.addWidget(manual_backup_desc)
+
+        btn_manual_backup = QPushButton("Hacer backup ahora")
+        btn_manual_backup.setMinimumHeight(48)
+        btn_manual_backup.setStyleSheet(BUTTON_STYLE)
+        btn_manual_backup.clicked.connect(self.do_manual_backup)
+        backup_layout.addWidget(btn_manual_backup)
+
+        # Restore backup
+        BUTTON_STYLE_SECONDARY = """
+            QPushButton {
+                background-color: white;
+                color: #4A6A92;
+                border: 2px solid #4A6A92;
+                border-radius: 12px;
+                font-size: 15px;
+                font-weight: bold;
+                padding: 10px;
+            }
+            QPushButton:hover {
+                background-color: #EFF6FF;
+            }
+        """
+
+        btn_restore_backup = QPushButton("Restaurar backup")
+        btn_restore_backup.setMinimumHeight(48)
+        btn_restore_backup.setStyleSheet(BUTTON_STYLE_SECONDARY)
+        btn_restore_backup.clicked.connect(self.do_restore_backup)
+        backup_layout.addWidget(btn_restore_backup)
+
+        # Separador
+        sep = QFrame()
+        sep.setFrameShape(QFrame.HLine)
+        sep.setStyleSheet("color: #E2E8F0; margin: 8px 0;")
+        backup_layout.addWidget(sep)
+
+        # Backup automático
+        auto_backup_label = QLabel("Backup automático")
+        auto_backup_label.setStyleSheet("font-size: 15px; font-weight: bold; color: #1E293B; background: transparent;")
+        backup_layout.addWidget(auto_backup_label)
+
+        auto_row = QHBoxLayout()
+        auto_row.setSpacing(12)
+
+        self.auto_backup_check = QCheckBox("Activar backup automático")
+        self.auto_backup_check.setStyleSheet("font-size: 14px; color: #1E293B; background: transparent;")
+        auto_row.addWidget(self.auto_backup_check)
+
+        freq_label = QLabel("cada")
+        freq_label.setStyleSheet("font-size: 13px; color: #64748B; background: transparent;")
+        auto_row.addWidget(freq_label)
+
+        self.backup_freq_spin = QSpinBox()
+        self.backup_freq_spin.setMinimum(1)
+        self.backup_freq_spin.setMaximum(30)
+        self.backup_freq_spin.setValue(7)
+        self.backup_freq_spin.setMinimumHeight(44)
+        self.backup_freq_spin.setStyleSheet("""
+            QSpinBox {
+                background-color: white;
+                border: 2px solid #B8C4D0;
+                border-radius: 12px;
+                padding: 8px 14px;
+                font-size: 14px;
+                color: #1E293B;
+                min-width: 80px;
+            }
+        """)
+        auto_row.addWidget(self.backup_freq_spin)
+
+        days_label = QLabel("días")
+        days_label.setStyleSheet("font-size: 13px; color: #64748B; background: transparent;")
+        auto_row.addWidget(days_label)
+        auto_row.addStretch()
+        backup_layout.addLayout(auto_row)
+
+        # Carpeta de backup
+        folder_row = QHBoxLayout()
+        folder_row.setSpacing(12)
+
+        self.backup_folder_label = QLabel("Carpeta: no configurada")
+        self.backup_folder_label.setStyleSheet("font-size: 13px; color: #64748B; background: transparent;")
+
+        btn_select_folder = QPushButton("Seleccionar carpeta")
+        btn_select_folder.setFixedHeight(44)
+        btn_select_folder.setStyleSheet(BUTTON_STYLE)
+        btn_select_folder.clicked.connect(self.select_backup_folder)
+
+        folder_row.addWidget(self.backup_folder_label, 3)
+        folder_row.addWidget(btn_select_folder)
+        backup_layout.addLayout(folder_row)
+
+        # Último backup
+        self.last_backup_label = QLabel("Último backup: nunca")
+        self.last_backup_label.setStyleSheet("font-size: 12px; color: #94A3B8; background: transparent;")
+        backup_layout.addWidget(self.last_backup_label)
+
+        btn_save_backup = QPushButton("Guardar configuración de backup")
+        btn_save_backup.setMinimumHeight(48)
+        btn_save_backup.setStyleSheet(BUTTON_STYLE)
+        btn_save_backup.clicked.connect(self.save_backup_config)
+        backup_layout.addWidget(btn_save_backup)
+
+        backup_widget.setLayout(backup_layout)
+        content_layout.addWidget(CollapsibleSection("Backup", backup_widget))
 
         # ── ABM Usuarios ──────────────────────────────
         users_widget = QWidget()
@@ -264,7 +394,7 @@ class SettingsPage(QWidget):
         self.user_role_combo.setStyleSheet(self.combo_style())
 
         BLUE = "QPushButton { background-color: #4A6A92; color: white; border: none; border-radius: 12px; font-size: 14px; font-weight: bold; padding: 12px; } QPushButton:hover { background-color: #3D5A80; }"
-        RED = "QPushButton { background-color: #FF003D; color: white; border: none; border-radius: 12px; font-size: 14px; font-weight: bold; padding: 12px; } QPushButton:hover { background-color: #D90429; }"
+        RED_BTN = "QPushButton { background-color: #FF003D; color: white; border: none; border-radius: 12px; font-size: 14px; font-weight: bold; padding: 12px; } QPushButton:hover { background-color: #D90429; }"
 
         btn_save_user = QPushButton("Crear")
         btn_save_user.setMinimumHeight(50)
@@ -278,7 +408,7 @@ class SettingsPage(QWidget):
 
         btn_toggle_user = QPushButton("Activar / Desactivar")
         btn_toggle_user.setMinimumHeight(50)
-        btn_toggle_user.setStyleSheet(RED)
+        btn_toggle_user.setStyleSheet(RED_BTN)
         btn_toggle_user.clicked.connect(self.toggle_user)
 
         btn_clear_user = QPushButton("Limpiar")
@@ -323,6 +453,7 @@ class SettingsPage(QWidget):
 
         self.load_settings()
         self.load_users()
+        self.check_auto_backup()
 
     def combo_style(self):
         return """
@@ -343,11 +474,11 @@ class SettingsPage(QWidget):
         """
 
     def create_input(self, placeholder):
-        input_field = QLineEdit()
-        input_field.setPlaceholderText(placeholder)
-        input_field.setMinimumHeight(50)
-        input_field.setStyleSheet(INPUT_STYLE)
-        return input_field
+        field = QLineEdit()
+        field.setPlaceholderText(placeholder)
+        field.setMinimumHeight(50)
+        field.setStyleSheet(INPUT_STYLE)
+        return field
 
     def on_provider_changed(self, provider):
         if provider == "Otro (manual)":
@@ -418,6 +549,24 @@ class SettingsPage(QWidget):
         if qr_path:
             self.qr_path_label.setText(qr_path)
 
+        # Backup
+        auto_backup = data.get("backup_auto", "0")
+        self.auto_backup_check.setChecked(auto_backup == "1")
+
+        freq = data.get("backup_freq_days", "7")
+        try:
+            self.backup_freq_spin.setValue(int(freq))
+        except Exception:
+            self.backup_freq_spin.setValue(7)
+
+        backup_folder = data.get("backup_folder", "")
+        if backup_folder:
+            self.backup_folder_label.setText(f"Carpeta: {backup_folder}")
+
+        last_backup = data.get("backup_last_date", "")
+        if last_backup:
+            self.last_backup_label.setText(f"Último backup: {last_backup}")
+
     def save_business(self):
         if self.save_section({
             "business_name": self.business_name_input.text(),
@@ -469,6 +618,140 @@ class SettingsPage(QWidget):
         destination = qr_folder / "mercadopago_qr.png"
         shutil.copy(file_path, destination)
         self.qr_path_label.setText(str(destination))
+
+    # ── Backup ────────────────────────────────────────
+
+    def do_manual_backup(self):
+        db_path = get_db_path()
+
+        if not os.path.exists(db_path):
+            self.show_message("Error", f"No se encontró la base de datos en:\n{db_path}")
+            return
+
+        folder = QFileDialog.getExistingDirectory(self, "Seleccionar carpeta para backup")
+        if not folder:
+            return
+
+        try:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            dest = os.path.join(folder, f"sara_pos_backup_{timestamp}.db")
+            shutil.copy2(db_path, dest)
+
+            now_str = datetime.now().strftime("%d/%m/%Y %H:%M")
+            self.save_section({"backup_last_date": now_str})
+            self.last_backup_label.setText(f"Último backup: {now_str}")
+            self.show_message("OK", f"Backup guardado correctamente en:\n{dest}")
+        except Exception as e:
+            self.show_message("Error", f"Error al hacer backup: {str(e)}")
+
+    def do_restore_backup(self):
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Seleccionar archivo de backup", "", "Base de datos (*.db)"
+        )
+        if not file_path:
+            return
+
+        reply = QMessageBox(self)
+        reply.setWindowTitle("Restaurar backup")
+        reply.setText(
+            "⚠️ Esto reemplazará TODOS los datos actuales con el backup seleccionado.\n\n"
+            "Se creará una copia de seguridad automática antes de restaurar.\n\n"
+            "¿Estás seguro?"
+        )
+        reply.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        reply.setDefaultButton(QMessageBox.No)
+        reply.setStyleSheet("""
+            QMessageBox { background-color: white; }
+            QLabel { color: #1E293B; font-size: 14px; min-width: 350px; }
+            QPushButton {
+                background-color: #4A6A92; color: white; border: none;
+                border-radius: 10px; padding: 10px 20px; min-width: 80px;
+                min-height: 32px; font-size: 13px; font-weight: bold;
+            }
+            QPushButton:hover { background-color: #3D5A80; }
+        """)
+        if reply.exec() != QMessageBox.Yes:
+            return
+
+        db_path = get_db_path()
+
+        try:
+            # Hacer un backup de seguridad del estado actual antes de restaurar
+            if os.path.exists(db_path):
+                safety_ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                safety_dest = db_path + f".pre_restore_{safety_ts}.bak"
+                shutil.copy2(db_path, safety_dest)
+
+            shutil.copy2(file_path, db_path)
+            self.show_message(
+                "OK",
+                "✅ Backup restaurado correctamente.\n\nReiniciá la aplicación para que los cambios tomen efecto."
+            )
+        except Exception as e:
+            self.show_message("Error", f"Error al restaurar el backup: {str(e)}")
+
+    def select_backup_folder(self):
+        folder = QFileDialog.getExistingDirectory(self, "Seleccionar carpeta de backup automático")
+        if folder:
+            self.backup_folder_label.setText(f"Carpeta: {folder}")
+
+    def save_backup_config(self):
+        folder_text = self.backup_folder_label.text()
+        folder = folder_text.replace("Carpeta: ", "") if folder_text != "Carpeta: no configurada" else ""
+
+        if self.save_section({
+            "backup_auto": "1" if self.auto_backup_check.isChecked() else "0",
+            "backup_freq_days": str(self.backup_freq_spin.value()),
+            "backup_folder": folder,
+        }):
+            self.show_message("OK", "Configuración de backup guardada")
+
+    def check_auto_backup(self):
+        db = SessionLocal()
+        try:
+            settings = db.query(Setting).all()
+            data = {s.key: s.value for s in settings}
+        finally:
+            db.close()
+
+        if data.get("backup_auto", "0") != "1":
+            return
+
+        backup_folder = data.get("backup_folder", "")
+        if not backup_folder:
+            return
+
+        freq_days = int(data.get("backup_freq_days", "7"))
+        last_backup_str = data.get("backup_last_date", "")
+
+        should_backup = False
+
+        if not last_backup_str:
+            should_backup = True
+        else:
+            try:
+                last_backup = datetime.strptime(last_backup_str, "%d/%m/%Y %H:%M")
+                days_since = (datetime.now() - last_backup).days
+                if days_since >= freq_days:
+                    should_backup = True
+            except Exception:
+                should_backup = True
+
+        if should_backup:
+            try:
+                db_path = get_db_path()
+                if not os.path.exists(db_path):
+                    return
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                dest = os.path.join(backup_folder, f"sara_pos_backup_{timestamp}.db")
+                shutil.copy2(db_path, dest)
+                now_str = datetime.now().strftime("%d/%m/%Y %H:%M")
+                self.save_section({"backup_last_date": now_str})
+                self.last_backup_label.setText(f"Último backup: {now_str}")
+            except Exception:
+                pass
+
+    # ── ABM Usuarios ──────────────────────────────────
 
     def load_users(self):
         db = SessionLocal()
