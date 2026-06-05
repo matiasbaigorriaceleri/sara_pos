@@ -1,4 +1,5 @@
 import os
+import sys
 import bcrypt
 
 from PySide6.QtWidgets import (
@@ -25,6 +26,15 @@ from app.models.user_model import User
 from app.views.main_window import MainWindow
 
 
+def get_asset_path(relative_path):
+    """Devuelve la ruta correcta tanto en desarrollo como compilado."""
+    if getattr(sys, 'frozen', False):
+        base = sys._MEIPASS
+    else:
+        base = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    return os.path.join(base, relative_path)
+
+
 class LoginWindow(QWidget):
 
     def __init__(self):
@@ -37,10 +47,10 @@ class LoginWindow(QWidget):
         self.setFixedSize(760, 560)
         self.setStyleSheet(f"background-color: {BACKGROUND_COLOR};")
 
-        icon_path = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)),
-            "..", "..", "app", "assets", "sara_pos.png"
-        )
+        # ── Ícono de la ventana ───────────────────────
+        icon_path = get_asset_path(os.path.join("app", "assets", "sara_pos.ico"))
+        if not os.path.exists(icon_path):
+            icon_path = get_asset_path(os.path.join("app", "assets", "sara_pos_icon.png"))
         if os.path.exists(icon_path):
             self.setWindowIcon(QIcon(icon_path))
 

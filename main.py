@@ -26,18 +26,12 @@ from app.models.cash_movement_model import CashMovement
 from app.views.login_window import LoginWindow
 
 # ── Crear tablas ──────────────────────────────────────
-# Funciona tanto con SQLite como con PostgreSQL.
-# El engine ya fue configurado en database.py según db_config.ini
 Base.metadata.create_all(bind=engine)
 
 # ── Crear usuario admin por defecto ───────────────────
 db = SessionLocal()
-
 try:
-    admin_user = db.query(User).filter(
-        User.username == "admin"
-    ).first()
-
+    admin_user = db.query(User).filter(User.username == "admin").first()
     if not admin_user:
         hashed = bcrypt.hashpw("123".encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
         user = User(
@@ -57,7 +51,17 @@ finally:
 # ── Iniciar app ───────────────────────────────────────
 app = QApplication(sys.argv)
 
-icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "app", "assets", "sara_pos.png")
+# ── Ícono global de la app (barra de tareas + ventanas)
+def get_asset_path(relative_path):
+    if getattr(sys, 'frozen', False):
+        base = sys._MEIPASS
+    else:
+        base = os.path.abspath(os.path.dirname(__file__))
+    return os.path.join(base, relative_path)
+
+icon_path = get_asset_path(os.path.join("app", "assets", "sara_pos.ico"))
+if not os.path.exists(icon_path):
+    icon_path = get_asset_path(os.path.join("app", "assets", "sara_pos_icon.png"))
 if os.path.exists(icon_path):
     app.setWindowIcon(QIcon(icon_path))
 
