@@ -5,11 +5,22 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 
 Base = declarative_base()
 
-# ── Ruta base para SQLite ─────────────────────────────
+
 def _get_sqlite_path():
     if getattr(sys, 'frozen', False):
-        base = os.path.dirname(sys.executable)
+        # Ejecutable compilado — usar carpeta de datos del usuario
+        # %APPDATA%\SARA_POS en Windows, ~/Library/Application Support/SARA_POS en Mac
+        if sys.platform == "win32":
+            base = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "SARA_POS")
+        elif sys.platform == "darwin":
+            base = os.path.join(os.path.expanduser("~"), "Library", "Application Support", "SARA_POS")
+        else:
+            base = os.path.join(os.path.expanduser("~"), ".sara_pos")
+
+        # Crear la carpeta si no existe
+        os.makedirs(base, exist_ok=True)
     else:
+        # Desarrollo — usar raíz del proyecto
         base = os.path.abspath(
             os.path.join(os.path.dirname(__file__), "..", "..")
         )
@@ -17,13 +28,14 @@ def _get_sqlite_path():
 
 
 def _get_db_config():
-    """
-    Lee la configuración de conexión desde el archivo db_config.ini
-    ubicado junto al ejecutable o en la raíz del proyecto.
-    Devuelve un dict con los valores.
-    """
     if getattr(sys, 'frozen', False):
-        base = os.path.dirname(sys.executable)
+        if sys.platform == "win32":
+            base = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "SARA_POS")
+        elif sys.platform == "darwin":
+            base = os.path.join(os.path.expanduser("~"), "Library", "Application Support", "SARA_POS")
+        else:
+            base = os.path.join(os.path.expanduser("~"), ".sara_pos")
+        os.makedirs(base, exist_ok=True)
     else:
         base = os.path.abspath(
             os.path.join(os.path.dirname(__file__), "..", "..")
@@ -32,7 +44,7 @@ def _get_db_config():
     config_path = os.path.join(base, "db_config.ini")
 
     config = {
-        "mode": "sqlite",       # sqlite | postgresql
+        "mode": "sqlite",
         "host": "localhost",
         "port": "5432",
         "database": "sara_pos",
@@ -72,7 +84,7 @@ def _build_engine(config):
             echo=False,
             pool_size=5,
             max_overflow=10,
-            pool_pre_ping=True,   # detecta conexiones caídas automáticamente
+            pool_pre_ping=True,
         )
     else:
         sqlite_path = _get_sqlite_path()
@@ -80,7 +92,6 @@ def _build_engine(config):
         return create_engine(url, echo=False)
 
 
-# ── Inicialización ────────────────────────────────────
 _config = _get_db_config()
 engine = _build_engine(_config)
 
@@ -94,16 +105,10 @@ DATABASE_MODE = _config["mode"]
 
 
 def get_db_mode():
-    """Devuelve 'sqlite' o 'postgresql'."""
     return DATABASE_MODE
 
 
 def reload_engine(new_config):
-    """
-    Reconstruye el engine y SessionLocal con una nueva configuración.
-    Se llama desde Configuración cuando el usuario guarda cambios de BD.
-    También guarda la configuración en db_config.ini.
-    """
     global engine, SessionLocal, DATABASE_MODE, _config
 
     _save_db_config(new_config)
@@ -117,14 +122,18 @@ def reload_engine(new_config):
     DATABASE_MODE = new_config["mode"]
     _config = new_config
 
-    # Crear tablas si no existen (necesario al conectar a una BD nueva)
     Base.metadata.create_all(bind=engine)
 
 
 def _save_db_config(config):
-    """Guarda la configuración en db_config.ini."""
     if getattr(sys, 'frozen', False):
-        base = os.path.dirname(sys.executable)
+        if sys.platform == "win32":
+            base = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "SARA_POS")
+        elif sys.platform == "darwin":
+            base = os.path.join(os.path.expanduser("~"), "Library", "Application Support", "SARA_POS")
+        else:
+            base = os.path.join(os.path.expanduser("~"), ".sara_pos")
+        os.makedirs(base, exist_ok=True)
     else:
         base = os.path.abspath(
             os.path.join(os.path.dirname(__file__), "..", "..")
@@ -148,10 +157,6 @@ def _save_db_config(config):
 
 
 def test_connection(config):
-    """
-    Prueba la conexión con la configuración dada.
-    Devuelve (True, "OK") o (False, "mensaje de error").
-    """
     try:
         test_engine = _build_engine(config)
         with test_engine.connect() as conn:

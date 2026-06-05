@@ -901,6 +901,63 @@ class SettingsPage(QWidget):
         users_widget.setLayout(users_layout)
         content_layout.addWidget(CollapsibleSection("ABM Usuarios", users_widget))
 
+        # ── Acerca de ─────────────────────────────────
+        about_widget = QWidget()
+        about_layout = QVBoxLayout()
+        about_layout.setContentsMargins(16, 16, 16, 16)
+        about_layout.setSpacing(12)
+
+        # Logo / nombre
+        about_title = QLabel("SARA POS")
+        about_title.setStyleSheet(f"font-size: 28px; font-weight: bold; color: {PRIMARY_COLOR}; background: transparent;")
+        about_title.setAlignment(Qt.AlignCenter)
+        about_layout.addWidget(about_title)
+
+        about_version = QLabel("Versión 1.0")
+        about_version.setStyleSheet("font-size: 13px; color: #64748B; background: transparent;")
+        about_version.setAlignment(Qt.AlignCenter)
+        about_layout.addWidget(about_version)
+
+        about_sep = QFrame()
+        about_sep.setFrameShape(QFrame.HLine)
+        about_sep.setStyleSheet("color: #E2E8F0; margin: 4px 0;")
+        about_layout.addWidget(about_sep)
+
+        # Empresa
+        about_company = QLabel("Desarrollado por BIMABA™")
+        about_company.setStyleSheet("font-size: 14px; font-weight: bold; color: #1E293B; background: transparent;")
+        about_company.setAlignment(Qt.AlignCenter)
+        about_layout.addWidget(about_company)
+
+        about_copyright = QLabel("© 2026 BIMABA™. Todos los derechos reservados.")
+        about_copyright.setStyleSheet("font-size: 12px; color: #64748B; background: transparent;")
+        about_copyright.setAlignment(Qt.AlignCenter)
+        about_layout.addWidget(about_copyright)
+
+        about_sep2 = QFrame()
+        about_sep2.setFrameShape(QFrame.HLine)
+        about_sep2.setStyleSheet("color: #E2E8F0; margin: 4px 0;")
+        about_layout.addWidget(about_sep2)
+
+        # Contacto
+        about_contact_title = QLabel("Soporte y contacto")
+        about_contact_title.setStyleSheet("font-size: 13px; font-weight: bold; color: #1E293B; background: transparent;")
+        about_contact_title.setAlignment(Qt.AlignCenter)
+        about_layout.addWidget(about_contact_title)
+
+        about_email = QLabel("✉  soportesara@bimaba.com")
+        about_email.setStyleSheet("font-size: 13px; color: #4A6A92; background: transparent;")
+        about_email.setAlignment(Qt.AlignCenter)
+        about_layout.addWidget(about_email)
+
+        about_web = QLabel("🌐  www.bimaba.com")
+        about_web.setStyleSheet("font-size: 13px; color: #4A6A92; background: transparent;")
+        about_web.setAlignment(Qt.AlignCenter)
+        about_layout.addWidget(about_web)
+
+        about_widget.setLayout(about_layout)
+        content_layout.addWidget(CollapsibleSection("Acerca de", about_widget))
+
         content_layout.addStretch()
         content.setLayout(content_layout)
         scroll.setWidget(content)

@@ -34,7 +34,7 @@ class LoginWindow(QWidget):
     def setup_ui(self):
 
         self.setWindowTitle("SARA POS - Login")
-        self.setFixedSize(760, 520)
+        self.setFixedSize(760, 560)
         self.setStyleSheet(f"background-color: {BACKGROUND_COLOR};")
 
         icon_path = os.path.join(
@@ -45,7 +45,7 @@ class LoginWindow(QWidget):
             self.setWindowIcon(QIcon(icon_path))
 
         main_layout = QVBoxLayout()
-        main_layout.setContentsMargins(70, 50, 70, 50)
+        main_layout.setContentsMargins(70, 50, 70, 30)
         main_layout.setSpacing(22)
         main_layout.setAlignment(Qt.AlignCenter)
 
@@ -87,6 +87,18 @@ class LoginWindow(QWidget):
         login_button.clicked.connect(self.login)
         main_layout.addWidget(login_button)
 
+        main_layout.addStretch()
+
+        # ── Copyright BIMABA ──────────────────────────
+        copyright_label = QLabel("© 2026 BIMABA™ — Todos los derechos reservados.")
+        copyright_label.setAlignment(Qt.AlignCenter)
+        copyright_label.setStyleSheet("""
+            font-size: 12px;
+            color: #94A3B8;
+            margin-top: 10px;
+        """)
+        main_layout.addWidget(copyright_label)
+
         self.setLayout(main_layout)
 
     def login(self):
@@ -111,7 +123,6 @@ class LoginWindow(QWidget):
             QMessageBox.warning(self, "Error", "Usuario o contraseña incorrectos")
             return
 
-        # Verificar contraseña con bcrypt
         try:
             password_ok = bcrypt.checkpw(
                 password.encode('utf-8'),
