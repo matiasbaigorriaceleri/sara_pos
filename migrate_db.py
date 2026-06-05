@@ -390,3 +390,9 @@ def _migrate_users(old, new):
 if __name__ == "__main__":
     migrate()
     input("\nPresioná Enter para cerrar...")
+
+### PARA EJECUTAR ESTO ###
+
+#cd /Users/matiasbaigorria/Documents/sara_pos
+#source venv/bin/activate
+#python migrate_db.py
