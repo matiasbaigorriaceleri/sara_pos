@@ -1,3 +1,12 @@
+# Fix ícono en barra de tareas Windows
+import ctypes
+import sys
+if sys.platform == "win32":
+    try:
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("BIMABA.SARAPOS.1.0")
+    except Exception:
+        pass
+
 import sys
 import os
 import bcrypt
