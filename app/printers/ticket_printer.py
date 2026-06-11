@@ -1,4 +1,5 @@
 import os
+import sys
 import tempfile
 import subprocess
 import platform
@@ -13,6 +14,14 @@ from app.models.settings_model import Setting
 def get_setting(db, key, default=""):
     setting = db.query(Setting).filter(Setting.key == key).first()
     return setting.value if setting and setting.value else default
+
+
+def _get_printer_name():
+    db = SessionLocal()
+    try:
+        return get_setting(db, "printer_name", "")
+    finally:
+        db.close()
 
 
 def generate_ticket_pdf(ticket_id, items, total, payment_method):
@@ -136,72 +145,34 @@ def generate_ticket_pdf(ticket_id, items, total, payment_method):
     return tmp_path
 
 
-def _get_printer_name():
-    db = SessionLocal()
-    try:
-        return get_setting(db, "printer_name", "")
-    finally:
-        db.close()
-
-
-def _pdf_to_png_macos(pdf_path, printer_size):
-    """
-    Convierte PDF a PNG usando Python puro (Pillow + pdf2image o reportlab rasterizer).
-    Fallback: usa screencapture si está disponible.
-    """
-    png_path = pdf_path.replace(".pdf", ".png")
-    width_px = 384 if "58" in printer_size else 576  # 58mm@203dpi ≈ 384px
-
-    # Intento 1: pdf2image (requiere poppler)
-    try:
-        from pdf2image import convert_from_path
-        images = convert_from_path(pdf_path, dpi=203, size=(width_px, None))
-        if images:
-            images[0].save(png_path, "PNG")
-            return png_path
-    except Exception:
-        pass
-
-    # Intento 2: pillow directo
-    try:
-        from PIL import Image
-        import struct, zlib
-
-        # Si pdf2image no está, intentar con Wand
-        from wand.image import Image as WandImage
-        with WandImage(filename=f"{pdf_path}[0]", resolution=203) as img:
-            img.format = "png"
-            img.save(filename=png_path)
-        return png_path
-    except Exception:
-        pass
-
-    return None
-
-
 def print_ticket(ticket_id, items, total, payment_method):
-
+    """
+    Imprime el ticket en la impresora configurada o la predeterminada del sistema.
+    No abre ninguna ventana ni visor — manda directo a imprimir.
+    """
     try:
-        db = SessionLocal()
-        try:
-            printer_size = get_setting(db, "printer_size", "80mm")
-        finally:
-            db.close()
-
         pdf_path = generate_ticket_pdf(ticket_id, items, total, payment_method)
         system   = platform.system()
         printer  = _get_printer_name()
 
-        if system == "Darwin":
-            _print_macos(pdf_path, printer, printer_size)
-        elif system == "Windows":
+        if system == "Windows":
             _print_windows(pdf_path, printer)
+        elif system == "Darwin":
+            _print_unix(pdf_path, printer)
         elif system == "Linux":
-            cmd = ["lpr"]
-            if printer:
-                cmd += ["-P", printer]
-            cmd.append(pdf_path)
-            subprocess.run(cmd, check=True)
+            _print_unix(pdf_path, printer)
+
+        # Limpiar PDF temporal después de un momento
+        try:
+            import threading
+            def _cleanup():
+                import time
+                time.sleep(5)
+                if os.path.exists(pdf_path):
+                    os.remove(pdf_path)
+            threading.Thread(target=_cleanup, daemon=True).start()
+        except Exception:
+            pass
 
         return True, "Ticket enviado a imprimir"
 
@@ -209,81 +180,50 @@ def print_ticket(ticket_id, items, total, payment_method):
         return False, f"Error al imprimir: {str(e)}"
 
 
-def _print_macos(pdf_path, printer, printer_size):
-    """
-    Estrategia para macOS con impresoras térmicas:
-    1. Intentar con pdf2image → PNG → lpr
-    2. Intentar con mdimport/qlmanage para rasterizar
-    3. Fallback: lpr con -o media personalizado
-    """
-    width_px = 384 if "58" in printer_size else 576
-
-    # ── Intento 1: pdf2image ──────────────────────────
-    try:
-        from pdf2image import convert_from_path
-        png_path = pdf_path.replace(".pdf", ".png")
-        images = convert_from_path(pdf_path, dpi=203, size=(width_px, None))
-        if images:
-            images[0].save(png_path, "PNG")
-            cmd = ["lpr"]
-            if printer:
-                cmd += ["-P", printer]
-            cmd += ["-o", "fit-to-page", png_path]
-            subprocess.run(cmd, check=True)
-            os.remove(png_path)
-            return
-    except Exception:
-        pass
-
-    # ── Intento 2: qlmanage para rasterizar el PDF ────
-    try:
-        png_dir = tempfile.mkdtemp()
-        subprocess.run([
-            "qlmanage", "-t", "-s", str(width_px), "-o", png_dir, pdf_path
-        ], check=True, capture_output=True)
-
-        # qlmanage genera archivo con nombre original + .png
-        import glob
-        pngs = glob.glob(os.path.join(png_dir, "*.png"))
-        if pngs:
-            cmd = ["lpr"]
-            if printer:
-                cmd += ["-P", printer]
-            cmd += ["-o", "fit-to-page", pngs[0]]
-            subprocess.run(cmd, check=True)
-            for f in pngs:
-                os.remove(f)
-            os.rmdir(png_dir)
-            return
-    except Exception:
-        pass
-
-    # ── Intento 3: lpr con opciones de papel personalizado ──
-    # Último recurso — manda el PDF pero con opciones que
-    # le dicen a CUPS cómo manejarlo
-    cmd = ["lpr"]
-    if printer:
-        cmd += ["-P", printer]
-
-    # Opciones para papel térmico
-    media = "Custom.58x200mm" if "58" in printer_size else "Custom.80x200mm"
-    cmd += [
-        "-o", f"media={media}",
-        "-o", "fit-to-page",
-        "-o", "ColorModel=Gray",
-        pdf_path
-    ]
-    subprocess.run(cmd, check=True)
-
-
 def _print_windows(pdf_path, printer):
+    """
+    Windows: usa ShellExecute con verbo 'print' — manda directo a imprimir
+    sin abrir ninguna ventana ni visor.
+    Si hay SumatraPDF instalado lo usa para mayor control.
+    Si hay impresora específica configurada la usa, sino usa la predeterminada.
+    """
+    # Intento 1: SumatraPDF (mejor control, sin ventana)
     sumatra_paths = [
         r"C:\Program Files\SumatraPDF\SumatraPDF.exe",
         r"C:\Program Files (x86)\SumatraPDF\SumatraPDF.exe",
     ]
     for sumatra in sumatra_paths:
         if os.path.exists(sumatra):
-            cmd = [sumatra, "-print-to", printer, "-print-settings", "noscale", pdf_path] if printer else [sumatra, "-print-to-default", pdf_path]
+            if printer:
+                cmd = [sumatra, "-print-to", printer, "-print-settings", "noscale", "-silent", pdf_path]
+            else:
+                cmd = [sumatra, "-print-to-default", "-print-settings", "noscale", "-silent", pdf_path]
             subprocess.run(cmd, check=True)
             return
-    os.startfile(pdf_path, "print")
+
+    # Intento 2: ShellExecute con verbo "print" — sin abrir ventana
+    import ctypes
+    ret = ctypes.windll.shell32.ShellExecuteW(
+        None,       # hwnd
+        "print",    # verbo — manda directo a imprimir
+        pdf_path,   # archivo
+        None,       # parámetros
+        None,       # directorio
+        0           # SW_HIDE — sin ventana
+    )
+    if ret <= 32:
+        raise Exception(f"ShellExecute falló con código {ret}")
+
+
+def _print_unix(pdf_path, printer):
+    """
+    Mac y Linux: usa lpr directo.
+    Si hay impresora configurada la usa, sino usa la predeterminada del sistema.
+    lpr en Mac/Linux manda el PDF al spooler de CUPS sin abrir nada.
+    """
+    cmd = ["lpr"]
+    if printer:
+        cmd += ["-P", printer]
+    # Sin opciones extra — dejar que CUPS maneje el PDF con su driver
+    cmd.append(pdf_path)
+    subprocess.run(cmd, check=True)
