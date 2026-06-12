@@ -345,6 +345,23 @@ class SettingsPage(QWidget):
         hint.setWordWrap(True)
         smtp_layout.addWidget(hint)
 
+        btn_help_gmail = QPushButton("❓  ¿Cómo genero la Contraseña de App en Gmail?")
+        btn_help_gmail.setMinimumHeight(40)
+        btn_help_gmail.setStyleSheet("""
+            QPushButton {
+                background-color: #EFF6FF;
+                color: #4A6A92;
+                border: 1px solid #BFDBFE;
+                border-radius: 10px;
+                font-size: 13px;
+                font-weight: bold;
+                padding: 8px 14px;
+            }
+            QPushButton:hover { background-color: #DBEAFE; }
+        """)
+        btn_help_gmail.clicked.connect(self.show_gmail_help)
+        smtp_layout.addWidget(btn_help_gmail)
+
         btn_save_smtp = QPushButton("Guardar configuración de email")
         btn_save_smtp.setMinimumHeight(48)
         btn_save_smtp.setStyleSheet(BUTTON_STYLE)
@@ -1289,6 +1306,83 @@ class SettingsPage(QWidget):
             "smtp_password": self.smtp_password_input.text().strip(),
         }):
             self.show_message("OK", "Configuración de email guardada")
+
+    def show_gmail_help(self):
+        from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton, QScrollArea, QWidget
+        from PySide6.QtCore import Qt
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Cómo generar la Contraseña de App en Gmail")
+        dialog.setMinimumWidth(500)
+        dialog.setMinimumHeight(420)
+        dialog.setStyleSheet("background-color: white;")
+
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(28, 24, 28, 24)
+        layout.setSpacing(16)
+
+        title = QLabel("🔐  Contraseña de App — Gmail")
+        title.setStyleSheet("font-size: 17px; font-weight: bold; color: #4A6A92;")
+        layout.addWidget(title)
+
+        intro = QLabel("Gmail no permite usar tu contraseña normal en apps externas. Necesitás generar una Contraseña de App específica para SARA POS.")
+        intro.setStyleSheet("font-size: 13px; color: #64748B;")
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
+
+        steps = [
+            ("1", "Entrá a", "myaccount.google.com"),
+            ("2", "Andá a", "Seguridad → Verificación en dos pasos\n       (debe estar activada para continuar)"),
+            ("3", "Bajá hasta", "Contraseñas de aplicaciones"),
+            ("4", "Creá una nueva →", "elegí \"Otra (nombre personalizado)\"\n       → escribí SARA POS"),
+            ("5", "Google te genera", "una clave de 16 caracteres\n       tipo: xxxx xxxx xxxx xxxx"),
+            ("6", "Copiala y pegala en", "SARA → Configuración → Email\n       → campo Contraseña"),
+            ("7", "Presioná", "Guardar configuración de email"),
+        ]
+
+        scroll_widget = QWidget()
+        scroll_layout = QVBoxLayout(scroll_widget)
+        scroll_layout.setSpacing(8)
+        scroll_layout.setContentsMargins(0, 0, 0, 0)
+
+        for num, action, detail in steps:
+            row_widget = QWidget()
+            row_widget.setStyleSheet("background-color: #F8FAFC; border-radius: 8px;")
+            row_layout = QVBoxLayout(row_widget)
+            row_layout.setContentsMargins(12, 10, 12, 10)
+            row_layout.setSpacing(2)
+
+            step_label = QLabel(f"Paso {num} — {action}")
+            step_label.setStyleSheet("font-size: 13px; font-weight: bold; color: #1E293B; background: transparent;")
+            row_layout.addWidget(step_label)
+
+            detail_label = QLabel(f"       {detail}")
+            detail_label.setStyleSheet("font-size: 13px; color: #4A6A92; background: transparent;")
+            detail_label.setWordWrap(True)
+            row_layout.addWidget(detail_label)
+
+            scroll_layout.addWidget(row_widget)
+
+        scroll_area = QScrollArea()
+        scroll_area.setWidget(scroll_widget)
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setStyleSheet("QScrollArea { border: none; background: white; }")
+        layout.addWidget(scroll_area)
+
+        btn_ok = QPushButton("Entendido")
+        btn_ok.setMinimumHeight(46)
+        btn_ok.setStyleSheet("""
+            QPushButton {
+                background-color: #4A6A92; color: white;
+                border: none; border-radius: 10px;
+                font-size: 14px; font-weight: bold;
+            }
+            QPushButton:hover { background-color: #3D5A80; }
+        """)
+        btn_ok.clicked.connect(dialog.accept)
+        layout.addWidget(btn_ok)
+
+        dialog.exec()
 
     def select_qr(self):
         file_path, _ = QFileDialog.getOpenFileName(
