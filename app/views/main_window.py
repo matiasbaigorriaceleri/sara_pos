@@ -300,7 +300,7 @@ class MainWindow(QMainWindow):
             return SalesPage()
         elif index == 1:
             from app.views.pages.sales_detail_page import SalesDetailPage
-            return SalesDetailPage()
+            return SalesDetailPage(current_user=self.username, current_role=self.role)
         elif index == 2:
             from app.views.pages.products_page import ProductsPage
             return ProductsPage()
