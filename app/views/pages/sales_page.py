@@ -24,6 +24,7 @@ from app.models.client_model import Client
 from app.views.pages.payment_dialog import PaymentDialog
 from app.views.pages.transfer_dialog import TransferDialog
 from app.views.pages.budget_dialog import BudgetDialog
+from app.views.pages.ticket_delivery_dialog import TicketDeliveryDialog
 from app.printers.ticket_printer import print_ticket
 
 
@@ -673,9 +674,25 @@ class SalesPage(QWidget):
                 if reg is None:
                     return
                 ticket_id, cart_snapshot = reg
-                success, msg = print_ticket(ticket_id, cart_snapshot, total, payment_method)
-                if not success:
-                    self.show_message("Aviso", f"Venta registrada pero {msg}")
+
+                # ── Diálogo de entrega del ticket ─────
+                delivery = TicketDeliveryDialog(
+                    ticket_id=ticket_id,
+                    cart_snapshot=cart_snapshot,
+                    total=total,
+                    payment_method=payment_method,
+                    parent=self
+                )
+                delivery.exec()
+
+                if delivery.delivery_method == "print":
+                    success, msg = print_ticket(ticket_id, cart_snapshot, total, payment_method)
+                    if not success:
+                        self.show_message("Aviso", f"Venta registrada pero {msg}")
+                    else:
+                        self.show_message("Venta exitosa", f"Venta N° {ticket_id:05d} registrada\nTotal: $ {int(total)}")
+                elif delivery.delivery_method == "email":
+                    self.show_message("Venta exitosa", f"Venta N° {ticket_id:05d} registrada\nTicket enviado por email\nTotal: $ {int(total)}")
                 else:
                     self.show_message("Venta exitosa", f"Venta N° {ticket_id:05d} registrada\nTotal: $ {int(total)}")
                 break
