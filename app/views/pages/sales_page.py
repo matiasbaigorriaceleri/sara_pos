@@ -683,7 +683,13 @@ class SalesPage(QWidget):
                     payment_method=payment_method,
                     parent=self
                 )
-                delivery.exec()
+                result = delivery.exec()
+
+                # Si canceló → anular la venta y devolver stock
+                if result == QDialog.Rejected:
+                    self._auto_cancel_ticket(ticket_id, cart_snapshot)
+                    self.show_message("Venta cancelada", "La venta fue cancelada y el stock fue restaurado.")
+                    break
 
                 if delivery.delivery_method == "print":
                     success, msg = print_ticket(ticket_id, cart_snapshot, total, payment_method)
@@ -732,6 +738,34 @@ class SalesPage(QWidget):
         self.clear_client()
         self.refresh_cart()
         self.load_products()
+
+    def _auto_cancel_ticket(self, ticket_id, cart_snapshot):
+        """Anula automáticamente un ticket y devuelve el stock."""
+        from app.models.ticket_model import Ticket
+        from app.models.ticket_item_model import TicketItem
+        from datetime import datetime as dt
+
+        db = SessionLocal()
+        try:
+            ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
+            if ticket:
+                ticket.status = "cancelled"
+                ticket.cancel_reason = "Cancelado por el operador en el punto de venta"
+                ticket.cancelled_by = "sistema"
+                ticket.cancelled_at = dt.now()
+
+            # Devolver stock
+            for item in cart_snapshot:
+                from app.models.product_model import Product
+                product = db.query(Product).filter(Product.id == item["id"]).first()
+                if product:
+                    product.stock += item["quantity"]
+
+            db.commit()
+        except Exception:
+            db.rollback()
+        finally:
+            db.close()
 
     def _confirm_budget(self, total, email):
         result = self.register_sale(total, "budget")

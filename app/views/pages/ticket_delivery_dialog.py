@@ -1,8 +1,3 @@
-"""
-Diálogo de entrega de ticket — permite elegir entre imprimir o enviar por email.
-Si elige email, pide los datos del cliente y envía el ticket.
-"""
-
 import re
 import smtplib
 from email.mime.multipart import MIMEMultipart
@@ -13,7 +8,8 @@ from datetime import datetime
 
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel,
-    QPushButton, QLineEdit, QFrame, QWidget,
+    QPushButton, QLineEdit, QFrame, QListWidget,
+    QListWidgetItem,
 )
 from PySide6.QtCore import Qt
 
@@ -28,31 +24,28 @@ def get_setting(db, key, default=""):
 
 
 class TicketDeliveryDialog(QDialog):
-    """
-    Paso 1: elegir Imprimir o Enviar por email.
-    Paso 2 (si email): formulario con email obligatorio + datos opcionales.
-    """
 
     def __init__(self, ticket_id, cart_snapshot, total, payment_method, parent=None):
         super().__init__(parent)
-        self.ticket_id       = ticket_id
-        self.cart_snapshot   = cart_snapshot
-        self.total           = total
-        self.payment_method  = payment_method
-        self.delivery_method = None  # "print" | "email"
+        self.ticket_id      = ticket_id
+        self.cart_snapshot  = cart_snapshot
+        self.total          = total
+        self.payment_method = payment_method
+        self.delivery_method = None
+        self._selected_client = None
 
         self.setWindowTitle("Entrega de ticket")
-        self.setMinimumWidth(460)
+        self.setMinimumWidth(480)
         self.setModal(True)
         self.setStyleSheet("background-color: white;")
 
         self._main_layout = QVBoxLayout(self)
         self._main_layout.setContentsMargins(28, 28, 28, 24)
-        self._main_layout.setSpacing(16)
+        self._main_layout.setSpacing(14)
 
         self._show_step1()
 
-    # ── Estilos comunes ───────────────────────────────
+    # ── Helpers de estilo ─────────────────────────────
 
     def _btn_primary(self, text):
         btn = QPushButton(text)
@@ -80,6 +73,18 @@ class TicketDeliveryDialog(QDialog):
         """)
         return btn
 
+    def _btn_cancel(self, text="Cancelar venta"):
+        btn = QPushButton(text)
+        btn.setMinimumHeight(40)
+        btn.setStyleSheet("""
+            QPushButton {
+                background-color: transparent; color: #EF4444;
+                border: none; font-size: 13px; font-weight: bold;
+            }
+            QPushButton:hover { color: #DC2626; }
+        """)
+        return btn
+
     def _input(self, placeholder, required=False):
         inp = QLineEdit()
         inp.setPlaceholderText(placeholder + (" *" if required else ""))
@@ -100,6 +105,14 @@ class TicketDeliveryDialog(QDialog):
     def _clear_layout(self):
         while self._main_layout.count():
             item = self._main_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+            elif item.layout():
+                self._clear_sublayout(item.layout())
+
+    def _clear_sublayout(self, layout):
+        while layout.count():
+            item = layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
 
@@ -151,31 +164,70 @@ class TicketDeliveryDialog(QDialog):
         self.delivery_method = "none"
         self.accept()
 
-    # ── Paso 2: formulario email ──────────────────────
+    # ── Paso 2: buscar o cargar cliente ───────────────
 
     def _show_step2(self):
         self._clear_layout()
+        self._selected_client = None
 
         title = QLabel("Enviar ticket por email")
         title.setStyleSheet("font-size: 18px; font-weight: bold; color: #1E293B;")
         title.setAlignment(Qt.AlignCenter)
         self._main_layout.addWidget(title)
 
-        hint = QLabel("Solo el email es obligatorio. Los demás datos se guardan en Clientes.")
-        hint.setStyleSheet("font-size: 12px; color: #64748B;")
-        hint.setWordWrap(True)
-        hint.setAlignment(Qt.AlignCenter)
-        self._main_layout.addWidget(hint)
+        # Buscador
+        search_label = QLabel("Buscar cliente existente:")
+        search_label.setStyleSheet("font-size: 13px; color: #64748B;")
+        self._main_layout.addWidget(search_label)
 
-        self.email_input = self._input("Email del cliente", required=True)
+        search_row = QHBoxLayout()
+        self._search_input = self._input("Nombre o email del cliente...")
+        self._search_input.textChanged.connect(self._on_search_changed)
+        search_row.addWidget(self._search_input)
+        self._main_layout.addLayout(search_row)
+
+        # Lista de resultados
+        self._results_list = QListWidget()
+        self._results_list.setMaximumHeight(120)
+        self._results_list.setStyleSheet("""
+            QListWidget {
+                border: 1px solid #B8C4D0;
+                border-radius: 8px;
+                font-size: 13px;
+                color: #1E293B;
+                background: white;
+            }
+            QListWidget::item:selected {
+                background-color: #D8E6F5;
+                color: #1E293B;
+            }
+            QListWidget::item:hover {
+                background-color: #EFF6FF;
+            }
+        """)
+        self._results_list.hide()
+        self._results_list.itemClicked.connect(self._on_client_selected)
+        self._main_layout.addWidget(self._results_list)
+
+        sep = QFrame()
+        sep.setFrameShape(QFrame.HLine)
+        sep.setStyleSheet("color: #E2E8F0;")
+        self._main_layout.addWidget(sep)
+
+        # Formulario
+        form_label = QLabel("Datos del cliente:")
+        form_label.setStyleSheet("font-size: 13px; color: #64748B;")
+        self._main_layout.addWidget(form_label)
+
+        self.email_input = self._input("Email *", required=False)
         self._main_layout.addWidget(self.email_input)
 
-        row = QHBoxLayout()
+        name_row = QHBoxLayout()
         self.nombre_input = self._input("Nombre")
         self.apellido_input = self._input("Apellido")
-        row.addWidget(self.nombre_input)
-        row.addWidget(self.apellido_input)
-        self._main_layout.addLayout(row)
+        name_row.addWidget(self.nombre_input)
+        name_row.addWidget(self.apellido_input)
+        self._main_layout.addLayout(name_row)
 
         self.celular_input = self._input("Celular (ej: 3516137769)")
         self._main_layout.addWidget(self.celular_input)
@@ -184,6 +236,7 @@ class TicketDeliveryDialog(QDialog):
         self.error_label.setStyleSheet("font-size: 12px; color: #EF4444;")
         self._main_layout.addWidget(self.error_label)
 
+        # Botones
         btn_row = QHBoxLayout()
         btn_back = self._btn_secondary("← Volver")
         btn_back.clicked.connect(self._show_step1)
@@ -193,27 +246,93 @@ class TicketDeliveryDialog(QDialog):
         btn_row.addWidget(btn_send)
         self._main_layout.addLayout(btn_row)
 
-    def _send_email(self):
-        email   = self.email_input.text().strip()
-        nombre  = self.nombre_input.text().strip()
-        apellido = self.apellido_input.text().strip()
-        celular = self.celular_input.text().strip()
+        btn_cancel = self._btn_cancel("✕  Cancelar venta")
+        btn_cancel.clicked.connect(self.reject)
+        self._main_layout.addWidget(btn_cancel, alignment=Qt.AlignCenter)
 
-        # Validaciones
+    def _on_search_changed(self, text):
+        query = text.strip().upper()
+        self._results_list.clear()
+        self._selected_client = None
+
+        if len(query) < 2:
+            self._results_list.hide()
+            return
+
+        db = SessionLocal()
+        try:
+            clients = db.query(Client).filter(
+                Client.is_active == True
+            ).all()
+            matches = [
+                c for c in clients
+                if query in (c.name or "").upper()
+                or query in (c.email or "").upper()
+            ]
+        finally:
+            db.close()
+
+        if not matches:
+            self._results_list.hide()
+            return
+
+        for c in matches[:8]:
+            label = f"{c.name}  —  {c.email or 'sin email'}"
+            item = QListWidgetItem(label)
+            item.setData(Qt.UserRole, {
+                "id": c.id,
+                "name": c.name or "",
+                "email": c.email or "",
+                "phone": c.phone or "",
+            })
+            self._results_list.addItem(item)
+
+        self._results_list.show()
+
+    def _on_client_selected(self, item):
+        data = item.data(Qt.UserRole)
+        self._selected_client = data
+
+        # Separar nombre y apellido
+        parts = (data["name"] or "").split(" ", 1)
+        nombre   = parts[0] if parts else ""
+        apellido = parts[1] if len(parts) > 1 else ""
+
+        self.email_input.setText(data["email"])
+        self.nombre_input.setText(nombre)
+        self.apellido_input.setText(apellido)
+        self.celular_input.setText(data["phone"])
+
+        self._results_list.hide()
+        self._search_input.clear()
+        self.error_label.setText(f"✓ Cliente seleccionado: {data['name']}")
+        self.error_label.setStyleSheet("font-size: 12px; color: #16A34A;")
+
+    # ── Envío ─────────────────────────────────────────
+
+    def _send_email(self):
+        email    = self.email_input.text().strip()
+        nombre   = self.nombre_input.text().strip()
+        apellido = self.apellido_input.text().strip()
+        celular  = self.celular_input.text().strip()
+
         if not email or "@" not in email or "." not in email.split("@")[-1]:
+            self.error_label.setStyleSheet("font-size: 12px; color: #EF4444;")
             self.error_label.setText("El email no es válido.")
             return
 
         if celular and not re.fullmatch(r"\d{10}", celular):
-            self.error_label.setText("El celular debe tener exactamente 10 dígitos numéricos (ej: 3516137769).")
+            self.error_label.setStyleSheet("font-size: 12px; color: #EF4444;")
+            self.error_label.setText("El celular debe tener 10 dígitos numéricos (ej: 3516137769).")
             return
 
+        self.error_label.setStyleSheet("font-size: 12px; color: #64748B;")
         self.error_label.setText("Enviando...")
 
-        # Guardar cliente si no existe
-        self._save_client(email, nombre, apellido, celular)
+        # Guardar o actualizar cliente
+        if not self._selected_client:
+            self._save_new_client(email, nombre, apellido, celular)
 
-        # Generar y enviar el PDF
         try:
             from app.printers.ticket_printer import generate_ticket_pdf
             pdf_path = generate_ticket_pdf(
@@ -222,14 +341,14 @@ class TicketDeliveryDialog(QDialog):
             )
             self._send_smtp(email, pdf_path, nombre)
         except Exception as e:
+            self.error_label.setStyleSheet("font-size: 12px; color: #EF4444;")
             self.error_label.setText(f"Error al enviar: {str(e)}")
             return
 
         self.delivery_method = "email"
         self.accept()
 
-    def _save_client(self, email, nombre, apellido, celular):
-        """Guarda el cliente en la BD si no existe ya con ese email."""
+    def _save_new_client(self, email, nombre, apellido, celular):
         db = SessionLocal()
         try:
             existing = db.query(Client).filter(Client.email == email).first()
@@ -238,7 +357,6 @@ class TicketDeliveryDialog(QDialog):
 
             full_name = f"{nombre} {apellido}".strip().upper() or email.upper()
 
-            # Generar número de cuenta
             last = db.query(Client).order_by(Client.id.desc()).first()
             num = 1
             if last and last.account_number:
@@ -265,7 +383,6 @@ class TicketDeliveryDialog(QDialog):
             db.close()
 
     def _send_smtp(self, to_email, pdf_path, nombre):
-        """Envía el ticket PDF por email usando la configuración SMTP de SARA."""
         db = SessionLocal()
         try:
             smtp_email    = get_setting(db, "smtp_email", "")
@@ -277,7 +394,7 @@ class TicketDeliveryDialog(QDialog):
             db.close()
 
         if not smtp_email or not smtp_password:
-            raise Exception("Configurá el email en Configuración → Email antes de enviar.")
+            raise Exception("Configurá el email en Configuración → Email.")
 
         saludo = f"Hola {nombre}," if nombre else "Hola,"
 
@@ -296,7 +413,6 @@ class TicketDeliveryDialog(QDialog):
         )
         msg.attach(MIMEText(body, "plain"))
 
-        # Adjuntar PDF
         import os
         with open(pdf_path, "rb") as f:
             part = MIMEBase("application", "octet-stream")
