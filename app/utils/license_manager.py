@@ -168,7 +168,7 @@ PLAN_LIMITS = {
     "FREE": {
         "max_products": 2000,
         "max_clients": 100,
-        "max_users": 1,
+        "max_users": 2,
         "suppliers": False,
         "reports": False,
         "email": False,

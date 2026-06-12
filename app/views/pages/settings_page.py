@@ -1058,26 +1058,44 @@ class SettingsPage(QWidget):
         limits = get_plan_limits()
         plan = get_current_plan()["plan"]
 
-        productos = "Ilimitados" if limits["max_products"] is None else str(limits["max_products"])
-        clientes = "Ilimitados" if limits["max_clients"] is None else str(limits["max_clients"])
-        usuarios = "Ilimitados" if limits["max_users"] is None else str(limits["max_users"])
+        productos = "Ilimitados" if limits["max_products"] is None else f"Hasta {limits['max_products']}"
+        clientes  = "Ilimitados" if limits["max_clients"]  is None else f"Hasta {limits['max_clients']}"
+        usuarios  = "Ilimitados" if limits["max_users"]    is None else f"Hasta {limits['max_users']} (admin + 1 adicional)" if limits["max_users"] == 2 else str(limits["max_users"])
 
         def si_no(val):
-            return "✅ Incluido" if val else "❌ No incluido"
+            return "✅  Incluido" if val else "❌  No disponible en este plan"
+
+        if plan == "SARA+":
+            header = "✅  Plan SARA+ activo"
+            header_style = "font-size: 14px; font-weight: bold; color: #16A34A;"
+        else:
+            header = "⚠️  Plan FREE activo"
+            header_style = "font-size: 14px; font-weight: bold; color: #F59E0B;"
 
         texto = (
-            f"Plan activo: {plan}\n"
-            f"• Productos: {productos}\n"
-            f"• Clientes: {clientes}\n"
-            f"• Usuarios: {usuarios}\n"
-            f"• Proveedores: {si_no(limits['suppliers'])}\n"
-            f"• Reportes: {si_no(limits['reports'])}\n"
-            f"• Email: {si_no(limits['email'])}\n"
-            f"• Backup: {si_no(limits['backup'])}\n"
-            f"• Factura electrónica ARCA: {si_no(limits['arca'])}\n"
-            f"• Multi-PC PostgreSQL: {si_no(limits['postgresql'])}\n"
-            f"• Marca de agua en tickets: {'Sí' if limits['ticket_watermark'] else 'No'}"
+            f"{header}\n"
+            f"─────────────────────────────────\n"
+            f"📦  Productos:            {productos}\n"
+            f"👥  Clientes:             {clientes}\n"
+            f"👤  Usuarios:             {usuarios}\n"
+            f"─────────────────────────────────\n"
+            f"🏭  Proveedores:          {si_no(limits['suppliers'])}\n"
+            f"📊  Reportes y análisis:  {si_no(limits['reports'])}\n"
+            f"✉️   Envío por email:      {si_no(limits['email'])}\n"
+            f"💾  Backup automático:    {si_no(limits['backup'])}\n"
+            f"🧾  Factura electrónica:  {si_no(limits['arca'])}\n"
+            f"🌐  Multi-PC (red local): {si_no(limits['postgresql'])}\n"
+            f"🖨️   Marca de agua ticket: {'Sí (plan FREE)' if limits['ticket_watermark'] else '❌  Sin marca de agua'}\n"
         )
+
+        if plan == "FREE":
+            texto += (
+                f"─────────────────────────────────\n"
+                f"💡  Activá SARA+ para desbloquear\n"
+                f"    proveedores, reportes, email,\n"
+                f"    backup y usuarios ilimitados."
+            )
+
         self.license_limits_label.setText(texto)
 
     # ── Helpers UI ────────────────────────────────────
