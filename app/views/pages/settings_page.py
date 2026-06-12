@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QSpinBox,
     QCheckBox,
+    QDialog,
 )
 
 from PySide6.QtCore import Qt
@@ -975,6 +976,41 @@ class SettingsPage(QWidget):
         about_widget.setLayout(about_layout)
         content_layout.addWidget(CollapsibleSection("Acerca de", about_widget))
 
+        # ── Restaurar ─────────────────────────────────
+        restore_widget = QWidget()
+        restore_layout = QVBoxLayout()
+        restore_layout.setContentsMargins(16, 16, 16, 16)
+        restore_layout.setSpacing(12)
+
+        restore_warning = QLabel(
+            "⚠️  Esta acción eliminará TODOS los datos del sistema: "
+            "productos, clientes, ventas, configuración y usuarios. "
+            "El sistema volverá al estado de fábrica. "
+            "Esta acción NO se puede deshacer."
+        )
+        restore_warning.setStyleSheet(
+            "font-size: 13px; color: #991B1B; background-color: #FEF2F2; "
+            "border: 1px solid #FECACA; border-radius: 8px; padding: 12px;"
+        )
+        restore_warning.setWordWrap(True)
+        restore_layout.addWidget(restore_warning)
+
+        btn_restore = QPushButton("🔄  Restaurar sistema de fábrica")
+        btn_restore.setMinimumHeight(52)
+        btn_restore.setStyleSheet("""
+            QPushButton {
+                background-color: #EF4444; color: white;
+                border: none; border-radius: 12px;
+                font-size: 15px; font-weight: bold;
+            }
+            QPushButton:hover { background-color: #DC2626; }
+        """)
+        btn_restore.clicked.connect(self.factory_reset)
+        restore_layout.addWidget(btn_restore)
+
+        restore_widget.setLayout(restore_layout)
+        content_layout.addWidget(CollapsibleSection("Restaurar", restore_widget))
+
         content_layout.addStretch()
         content.setLayout(content_layout)
         scroll.setWidget(content)
@@ -1803,6 +1839,121 @@ class SettingsPage(QWidget):
         self.user_username_input.clear()
         self.user_password_input.clear()
         self.user_role_combo.setCurrentIndex(0)
+
+    def factory_reset(self):
+        """Restablece el sistema a estado de fábrica con confirmación y auth admin."""
+        import shutil
+        import bcrypt
+        from datetime import datetime
+
+        # ── Paso 1: Confirmación ──────────────────────
+        msg1 = QMessageBox(self)
+        msg1.setWindowTitle("⚠️ Restaurar sistema")
+        msg1.setText(
+            "¿Estás seguro que querés restaurar el sistema?\n\n"
+            "Se eliminarán TODOS los datos:\n"
+            "• Productos, clientes, ventas\n"
+            "• Configuración del negocio\n"
+            "• Usuarios creados\n\n"
+            "Esta acción NO se puede deshacer."
+        )
+        msg1.setIcon(QMessageBox.Warning)
+        btn_si = msg1.addButton("Sí, continuar", QMessageBox.YesRole)
+        msg1.addButton("Cancelar", QMessageBox.NoRole)
+        msg1.setStyleSheet(self._msg_style())
+        msg1.exec()
+
+        if msg1.clickedButton() != btn_si:
+            return
+
+        # ── Paso 2: ¿Hacer backup? ────────────────────
+        msg2 = QMessageBox(self)
+        msg2.setWindowTitle("Copia de seguridad")
+        msg2.setText("¿Querés hacer una copia de seguridad antes de restaurar?")
+        msg2.setIcon(QMessageBox.Question)
+        btn_backup = msg2.addButton("Sí, hacer backup", QMessageBox.YesRole)
+        btn_no_backup = msg2.addButton("No, continuar sin backup", QMessageBox.NoRole)
+        msg2.setStyleSheet(self._msg_style())
+        msg2.exec()
+
+        do_backup = (msg2.clickedButton() == btn_backup)
+
+        # ── Paso 3: Auth admin ────────────────────────
+        from app.views.pages.sales_detail_page import AdminAuthDialog
+        auth = AdminAuthDialog(parent=self)
+        auth.setWindowTitle("Confirmación de administrador")
+        if auth.exec() != QDialog.Accepted:
+            return
+
+        # ── Paso 4: Backup si eligió ──────────────────
+        if do_backup:
+            from PySide6.QtWidgets import QFileDialog
+            db_path = get_db_path()
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            default_name = f"sara_pos_backup_{timestamp}.db"
+            save_path, _ = QFileDialog.getSaveFileName(
+                self, "Guardar backup", default_name, "Base de datos (*.db)"
+            )
+            if not save_path:
+                self.show_message("Cancelado", "Restauración cancelada. No se realizaron cambios.")
+                return
+            try:
+                shutil.copy2(db_path, save_path)
+            except Exception as e:
+                self.show_message("Error", f"No se pudo guardar el backup:\n{str(e)}")
+                return
+
+        # ── Paso 5: Borrar y recrear la BD ───────────
+        try:
+            from app.database.database import engine, Base, SessionLocal
+            from app.models.user_model import User
+
+            # Cerrar todas las conexiones y borrar tablas
+            Base.metadata.drop_all(bind=engine)
+            Base.metadata.create_all(bind=engine)
+
+            # Recrear usuario admin
+            db = SessionLocal()
+            try:
+                hashed = bcrypt.hashpw("123".encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+                db.add(User(
+                    username="admin",
+                    password=hashed,
+                    role="ADMIN",
+                    is_active=True
+                ))
+                db.commit()
+            finally:
+                db.close()
+
+            self.show_message(
+                "✅ Sistema restaurado",
+                "El sistema fue restaurado correctamente.\n\n"
+                "Usuario: admin\n"
+                "Contraseña: 123\n\n"
+                "La app se cerrará para aplicar los cambios."
+            )
+
+            # Cerrar la app para forzar reinicio limpio
+            import sys
+            from PySide6.QtWidgets import QApplication
+            QApplication.instance().quit()
+
+        except Exception as e:
+            self.show_message("Error", f"No se pudo restaurar el sistema:\n{str(e)}")
+
+    def _msg_style(self):
+        return """
+            QMessageBox { background-color: white; }
+            QLabel { color: #1E293B; font-size: 14px; min-width: 380px; }
+            QPushButton {
+                background-color: #4A6A92; color: white; border: none;
+                border-radius: 10px; padding: 10px 20px;
+                min-width: 120px; min-height: 36px;
+                font-size: 13px; font-weight: bold;
+            }
+            QPushButton:hover { background-color: #3D5A80; }
+        """
 
     def show_message(self, title, message):
         msg = QMessageBox(self)

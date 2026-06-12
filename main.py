@@ -14,12 +14,7 @@ import bcrypt
 from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QIcon
 
-from app.database.database import (
-    Base,
-    engine,
-    SessionLocal,
-)
-
+from app.database.database import Base, engine, SessionLocal
 from app.models.user_model import User
 from app.models.product_model import Product
 from app.models.ticket_model import Ticket
@@ -60,7 +55,7 @@ finally:
 # ── Iniciar app ───────────────────────────────────────
 app = QApplication(sys.argv)
 
-# ── Ícono global de la app (barra de tareas + ventanas)
+# ── Ícono global ──────────────────────────────────────
 def get_asset_path(relative_path):
     if getattr(sys, 'frozen', False):
         base = sys._MEIPASS
@@ -74,6 +69,14 @@ if not os.path.exists(icon_path):
 if os.path.exists(icon_path):
     app.setWindowIcon(QIcon(icon_path))
 
+# ── Wizard de primera vez ─────────────────────────────
+from app.views.setup_wizard import SetupWizard, is_first_run
+
+if is_first_run():
+    wizard = SetupWizard()
+    wizard.exec()
+
+# ── Login ─────────────────────────────────────────────
 window = LoginWindow()
 window.show()
 sys.exit(app.exec())
