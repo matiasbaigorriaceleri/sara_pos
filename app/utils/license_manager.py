@@ -166,8 +166,8 @@ def get_current_plan() -> dict:
 
 PLAN_LIMITS = {
     "FREE": {
-        "max_products": 2000,
-        "max_clients": 100,
+        "max_products": None,    # ilimitado
+        "max_clients": None,     # ilimitado
         "max_users": 2,
         "suppliers": False,
         "reports": False,
