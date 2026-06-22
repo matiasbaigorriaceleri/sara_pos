@@ -19,6 +19,7 @@ from PySide6.QtGui import QPixmap
 from app.database.database import SessionLocal
 from app.models.settings_model import Setting
 from app.assets.themes.theme import PRIMARY_COLOR
+from app.utils.bimaba_notifier import send_lead_to_bimaba
 
 
 def _save_settings(data: dict):
@@ -57,7 +58,7 @@ class SetupWizard(QDialog):
         self.setMinimumHeight(560)
         self.setModal(True)
         self.setStyleSheet("background-color: white;")
-        self.setWindowFlags(self.windowFlags() & ~Qt.WindowCloseButtonHint)
+        self.setWindowFlags(self.windowFlags() & ~Qt.WindowCloseButtonHint & ~Qt.WindowContextHelpButtonHint)
 
         self._step = 0
 
@@ -469,14 +470,35 @@ class SetupWizard(QDialog):
     # ── Guardar ───────────────────────────────────────
 
     def _save_step1(self):
+        nombre    = self._reg_nombre.text().strip()
+        apellido  = self._reg_apellido.text().strip()
+        email     = self._reg_email.text().strip()
+        phone     = self._reg_phone.text().strip()
+        pais      = self._reg_pais.text().strip()
+        ciudad    = self._reg_ciudad.text().strip()
+        localidad = self._reg_localidad.text().strip()
+
         _save_settings({
-            "owner_nombre":   self._reg_nombre.text().strip(),
-            "owner_apellido": self._reg_apellido.text().strip(),
-            "owner_email":    self._reg_email.text().strip(),
-            "owner_phone":    self._reg_phone.text().strip(),
-            "owner_pais":     self._reg_pais.text().strip(),
-            "owner_ciudad":   self._reg_ciudad.text().strip(),
-            "owner_localidad":self._reg_localidad.text().strip(),
+            "owner_nombre":    nombre,
+            "owner_apellido":  apellido,
+            "owner_email":     email,
+            "owner_phone":     phone,
+            "owner_pais":      pais,
+            "owner_ciudad":    ciudad,
+            "owner_localidad": localidad,
+        })
+
+        # Envía el lead a BIMABA en background. No bloquea ni muestra
+        # errores si falla (sin internet, etc.) — es de mejor esfuerzo.
+        send_lead_to_bimaba({
+            "nombre": nombre,
+            "apellido": apellido,
+            "email": email,
+            "phone": phone,
+            "pais": pais,
+            "ciudad": ciudad,
+            "localidad": localidad,
+            "business_name": self._biz_name.text().strip() if hasattr(self, "_biz_name") else "",
         })
 
     def _save_step2(self):
@@ -529,3 +551,18 @@ class SetupWizard(QDialog):
         if self.TOTAL_STEPS > 1 and self._step > 0:
             fill = int((self._step / (self.TOTAL_STEPS - 1)) * self.width())
             self._progress_fill.setFixedWidth(fill)
+
+    def closeEvent(self, event):
+        # Bloquea Alt+F4, click afuera, o cualquier intento de cierre
+        # mientras no se haya completado el último paso del wizard.
+        if self._step < self.TOTAL_STEPS - 1:
+            event.ignore()
+        else:
+            event.accept()
+
+    def keyPressEvent(self, event):
+        # Bloquea Esc explícitamente (QDialog lo usa por defecto para cerrar).
+        if event.key() == Qt.Key_Escape:
+            event.ignore()
+            return
+        super().keyPressEvent(event)
