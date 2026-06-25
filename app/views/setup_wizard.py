@@ -1,8 +1,9 @@
 """
 SARA POS — Wizard de configuración inicial
 ==========================================
-Se muestra la primera vez que se abre la app (cuando business_name está vacío).
-Pasos: Bienvenida → Registro personal → Datos negocio → Impresora → Ticket → Listo
+Se muestra cada vez que se abre la app, mientras "business_name" esté vacío
+y el usuario no haya tildado "No molestar más".
+Pasos: Bienvenida → Datos negocio → Impresora → Ticket → Listo
 """
 
 import subprocess
@@ -11,7 +12,7 @@ import platform
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QLineEdit, QComboBox, QFrame,
-    QWidget, QStackedWidget,
+    QWidget, QStackedWidget, QCheckBox,
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap
@@ -19,7 +20,6 @@ from PySide6.QtGui import QPixmap
 from app.database.database import SessionLocal
 from app.models.settings_model import Setting
 from app.assets.themes.theme import PRIMARY_COLOR
-from app.utils.bimaba_notifier import send_lead_to_bimaba
 
 
 def _save_settings(data: dict):
@@ -39,26 +39,35 @@ def _save_settings(data: dict):
 
 
 def is_first_run() -> bool:
+    """
+    Devuelve True si el wizard debe mostrarse: el negocio no está
+    configurado todavía Y el usuario no pidió que no se le moleste más.
+    """
     db = SessionLocal()
     try:
-        s = db.query(Setting).filter(Setting.key == "business_name").first()
-        return not s or not (s.value or "").strip()
+        s_name = db.query(Setting).filter(Setting.key == "business_name").first()
+        business_missing = not s_name or not (s_name.value or "").strip()
+
+        s_dont_ask = db.query(Setting).filter(Setting.key == "setup_dont_ask_again").first()
+        dont_ask = bool(s_dont_ask and (s_dont_ask.value or "").strip() == "1")
+
+        return business_missing and not dont_ask
     finally:
         db.close()
 
 
 class SetupWizard(QDialog):
 
-    TOTAL_STEPS = 6
+    TOTAL_STEPS = 5
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Configuración inicial — SARA POS")
         self.setMinimumWidth(580)
-        self.setMinimumHeight(560)
+        self.setMinimumHeight(600)
         self.setModal(True)
         self.setStyleSheet("background-color: white;")
-        self.setWindowFlags(self.windowFlags() & ~Qt.WindowCloseButtonHint & ~Qt.WindowContextHelpButtonHint)
+        # El wizard ahora SÍ se puede cerrar (botón X visible) y posponer.
 
         self._step = 0
 
@@ -80,6 +89,17 @@ class SetupWizard(QDialog):
         self._stack = QStackedWidget()
         main_layout.addWidget(self._stack)
 
+        # Checkbox "No molestar más" — visible en todos los pasos
+        dont_ask_frame = QFrame()
+        dont_ask_layout = QHBoxLayout(dont_ask_frame)
+        dont_ask_layout.setContentsMargins(28, 4, 28, 4)
+
+        self._chk_dont_ask = QCheckBox("No preguntar más (podrás completar estos datos luego, manualmente, desde Configuración)")
+        self._chk_dont_ask.setStyleSheet("font-size: 12px; color: #64748B;")
+        dont_ask_layout.addWidget(self._chk_dont_ask)
+        dont_ask_layout.addStretch()
+        main_layout.addWidget(dont_ask_frame)
+
         # Navegación
         nav_frame = QFrame()
         nav_frame.setStyleSheet("background-color: #F8FAFC; border-top: 1px solid #E2E8F0;")
@@ -87,7 +107,7 @@ class SetupWizard(QDialog):
         nav_layout.setContentsMargins(28, 16, 28, 16)
         nav_layout.setSpacing(12)
 
-        self._step_label = QLabel("Paso 1 de 6")
+        self._step_label = QLabel("Paso 1 de 5")
         self._step_label.setStyleSheet("font-size: 12px; color: #94A3B8;")
         nav_layout.addWidget(self._step_label)
         nav_layout.addStretch()
@@ -118,7 +138,6 @@ class SetupWizard(QDialog):
         self._build_step2()
         self._build_step3()
         self._build_step4()
-        self._build_step5()
 
         self._update_nav()
 
@@ -201,12 +220,6 @@ class SetupWizard(QDialog):
                 break
         return lbl
 
-    def _clear_layout(self):
-        while self._main_layout.count():
-            item = self._main_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-
     # ── Paso 0: Bienvenida ────────────────────────────
 
     def _build_step0(self):
@@ -229,7 +242,6 @@ class SetupWizard(QDialog):
         layout.addWidget(subtitle)
 
         info = QLabel(
-            "  👤  Tus datos personales\n"
             "  📋  Datos de tu negocio\n"
             "  🖨️   Impresora\n"
             "  🎫  Datos del ticket"
@@ -242,56 +254,9 @@ class SetupWizard(QDialog):
         layout.addStretch()
         self._stack.addWidget(widget)
 
-    # ── Paso 1: Registro personal ─────────────────────
+    # ── Paso 1: Datos del negocio ─────────────────────
 
     def _build_step1(self):
-        widget, layout = self._page(
-            "👤  Tus datos personales",
-            "Solo para BIMABA™. No se comparte con terceros ni se usa para publicidad.",
-        )
-
-        note = QLabel(
-            "⚠️  Ingresá tu nombre personal y tu email personal — "
-            "no los del negocio. Esto nos permite ayudarte si necesitás soporte."
-        )
-        note.setStyleSheet(
-            "font-size: 12px; color: #92400E; background-color: #FFF7ED; "
-            "border: 1px solid #FED7AA; border-radius: 8px; padding: 10px;"
-        )
-        note.setWordWrap(True)
-        layout.addWidget(note)
-
-        name_row = QHBoxLayout()
-        self._reg_nombre   = self._input("Tu nombre personal *")
-        self._reg_apellido = self._input("Tu apellido personal *")
-        name_row.addWidget(self._reg_nombre)
-        name_row.addWidget(self._reg_apellido)
-        layout.addLayout(name_row)
-
-        self._reg_email = self._input("Tu email personal * (ej: juan@gmail.com)")
-        layout.addWidget(self._reg_email)
-
-        self._reg_phone = self._input("Teléfono (opcional)")
-        layout.addWidget(self._reg_phone)
-
-        geo_row = QHBoxLayout()
-        self._reg_pais   = self._input("País (opcional)")
-        self._reg_ciudad = self._input("Ciudad (opcional)")
-        geo_row.addWidget(self._reg_pais)
-        geo_row.addWidget(self._reg_ciudad)
-        layout.addLayout(geo_row)
-
-        self._reg_localidad = self._input("Localidad (opcional)")
-        layout.addWidget(self._reg_localidad)
-
-        self._step1_error = self._error_label()
-        layout.addWidget(self._step1_error)
-        layout.addStretch()
-        self._stack.addWidget(widget)
-
-    # ── Paso 2: Datos del negocio ─────────────────────
-
-    def _build_step2(self):
         widget, layout = self._page(
             "📋  Datos de tu negocio",
             "El nombre es obligatorio y aparecerá en los tickets.",
@@ -307,14 +272,14 @@ class SetupWizard(QDialog):
         layout.addWidget(self._biz_addr)
         layout.addWidget(self._biz_phone)
 
-        self._step2_error = self._error_label()
-        layout.addWidget(self._step2_error)
+        self._step1_error = self._error_label()
+        layout.addWidget(self._step1_error)
         layout.addStretch()
         self._stack.addWidget(widget)
 
-    # ── Paso 3: Impresora ─────────────────────────────
+    # ── Paso 2: Impresora ─────────────────────────────
 
-    def _build_step3(self):
+    def _build_step2(self):
         widget, layout = self._page(
             "🖨️   Impresora",
             "Seleccioná la impresora y el tamaño del papel."
@@ -346,9 +311,9 @@ class SetupWizard(QDialog):
         layout.addStretch()
         self._stack.addWidget(widget)
 
-    # ── Paso 4: Ticket ────────────────────────────────
+    # ── Paso 3: Ticket ────────────────────────────────
 
-    def _build_step4(self):
+    def _build_step3(self):
         widget, layout = self._page(
             "🎫  Datos del ticket",
             "Textos que aparecerán en cada comprobante de venta."
@@ -373,9 +338,9 @@ class SetupWizard(QDialog):
         layout.addStretch()
         self._stack.addWidget(widget)
 
-    # ── Paso 5: Listo ─────────────────────────────────
+    # ── Paso 4: Listo ─────────────────────────────────
 
-    def _build_step5(self):
+    def _build_step4(self):
         widget = QWidget()
         layout = QVBoxLayout(widget)
         layout.setContentsMargins(40, 32, 40, 20)
@@ -419,7 +384,7 @@ class SetupWizard(QDialog):
         elif self._step == 0:
             self._btn_next.setText("Comenzar →")
             self._btn_skip.hide()
-        elif self._step in (3, 4):
+        elif self._step in (2, 3):
             self._btn_next.setText("Siguiente →")
             self._btn_skip.show()
         else:
@@ -429,79 +394,48 @@ class SetupWizard(QDialog):
         self._stack.setCurrentIndex(self._step)
 
     def _next_step(self):
-        if self._step == 1:
-            nombre  = self._reg_nombre.text().strip()
-            apellido = self._reg_apellido.text().strip()
-            email   = self._reg_email.text().strip()
+        if self._chk_dont_ask.isChecked():
+            self._finish()
+            return
 
-            if not nombre or not apellido:
-                self._step1_error.setText("El nombre y apellido son obligatorios.")
-                return
-            if not email or "@" not in email or "." not in email.split("@")[-1]:
-                self._step1_error.setText("Ingresá un email personal válido.")
+        if self._step == 1:
+            if not self._biz_name.text().strip():
+                self._step1_error.setText("El nombre del negocio es obligatorio.")
                 return
             self._step1_error.setText("")
             self._save_step1()
 
         elif self._step == 2:
-            if not self._biz_name.text().strip():
-                self._step2_error.setText("El nombre del negocio es obligatorio.")
-                return
-            self._step2_error.setText("")
             self._save_step2()
 
         elif self._step == 3:
             self._save_step3()
 
-        elif self._step == 4:
-            self._save_step4()
-
         elif self._step == self.TOTAL_STEPS - 1:
-            self.accept()
+            self._finish()
             return
 
         self._step += 1
         self._update_nav()
 
     def _skip_step(self):
+        if self._chk_dont_ask.isChecked():
+            self._finish()
+            return
         self._step += 1
         self._update_nav()
+
+    def _finish(self):
+        self._save_dont_ask_preference()
+        self.accept()
+
+    def _save_dont_ask_preference(self):
+        if self._chk_dont_ask.isChecked():
+            _save_settings({"setup_dont_ask_again": "1"})
 
     # ── Guardar ───────────────────────────────────────
 
     def _save_step1(self):
-        nombre    = self._reg_nombre.text().strip()
-        apellido  = self._reg_apellido.text().strip()
-        email     = self._reg_email.text().strip()
-        phone     = self._reg_phone.text().strip()
-        pais      = self._reg_pais.text().strip()
-        ciudad    = self._reg_ciudad.text().strip()
-        localidad = self._reg_localidad.text().strip()
-
-        _save_settings({
-            "owner_nombre":    nombre,
-            "owner_apellido":  apellido,
-            "owner_email":     email,
-            "owner_phone":     phone,
-            "owner_pais":      pais,
-            "owner_ciudad":    ciudad,
-            "owner_localidad": localidad,
-        })
-
-        # Envía el lead a BIMABA en background. No bloquea ni muestra
-        # errores si falla (sin internet, etc.) — es de mejor esfuerzo.
-        send_lead_to_bimaba({
-            "nombre": nombre,
-            "apellido": apellido,
-            "email": email,
-            "phone": phone,
-            "pais": pais,
-            "ciudad": ciudad,
-            "localidad": localidad,
-            "business_name": self._biz_name.text().strip() if hasattr(self, "_biz_name") else "",
-        })
-
-    def _save_step2(self):
         _save_settings({
             "business_name":    self._biz_name.text().strip(),
             "business_cuit":    self._biz_cuit.text().strip(),
@@ -509,13 +443,13 @@ class SetupWizard(QDialog):
             "business_phone":   self._biz_phone.text().strip(),
         })
 
-    def _save_step3(self):
+    def _save_step2(self):
         printer = self._printer_combo.currentText()
         size    = self._size_combo.currentText()
         if printer != "Sin impresoras detectadas":
             _save_settings({"printer_name": printer, "printer_size": size})
 
-    def _save_step4(self):
+    def _save_step3(self):
         _save_settings({
             "ticket_legend": self._ticket_legend.text().strip(),
             "ticket_footer": self._ticket_footer.text().strip(),
@@ -553,16 +487,8 @@ class SetupWizard(QDialog):
             self._progress_fill.setFixedWidth(fill)
 
     def closeEvent(self, event):
-        # Bloquea Alt+F4, click afuera, o cualquier intento de cierre
-        # mientras no se haya completado el último paso del wizard.
-        if self._step < self.TOTAL_STEPS - 1:
-            event.ignore()
-        else:
-            event.accept()
-
-    def keyPressEvent(self, event):
-        # Bloquea Esc explícitamente (QDialog lo usa por defecto para cerrar).
-        if event.key() == Qt.Key_Escape:
-            event.ignore()
-            return
-        super().keyPressEvent(event)
+        # Ahora SÍ se puede cerrar el wizard en cualquier momento (X, Esc,
+        # Alt+F4). Si no tildó "No molestar más", reaparecerá la próxima
+        # vez que se abra SARA mientras el negocio no esté configurado.
+        self._save_dont_ask_preference()
+        event.accept()
