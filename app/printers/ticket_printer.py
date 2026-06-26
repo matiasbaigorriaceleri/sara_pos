@@ -211,70 +211,82 @@ def _draw_ticket_reportlab(c, page_width, page_height, data):
 def _print_windows_gdi(data, printer_name):
     """
     Dibuja el ticket directo sobre el Device Context de la impresora
-    usando win32print/win32ui, indicando explícitamente el ancho de
-    papel en décimas de milímetro. Esto evita depender de cualquier
-    visor de PDF (que ignoraba el tamaño custom de página y causaba
-    metros de papel en blanco antes del contenido).
+    usando win32print/win32ui. En vez de asumir que el ancho de papel
+    configurado (58/80mm) es el área imprimible real, se consulta el
+    driver (HORZRES/LOGPIXELSX) para obtener el ancho útil REAL —
+    muchos drivers térmicos genéricos (ej. "POS-58") tienen márgenes
+    no imprimibles de varios mm que de otro modo cortan el contenido
+    o lo descentran.
     """
     import win32print
     import win32ui
-    from win32con import MM_TWIPS
+    from win32con import MM_TEXT, LOGPIXELSX, LOGPIXELSY, HORZRES
 
     target_printer = printer_name or win32print.GetDefaultPrinter()
 
-    paper_width_mm = data["paper_width_mm"]
-    # Twips: 1440 por pulgada, 1 pulgada = 25.4mm
-    twips_per_mm = 1440 / 25.4
-    page_width_twips = int(paper_width_mm * twips_per_mm)
-
-    # Alto generoso (papel continuo); se recorta al avance real de impresión.
-    page_height_mm = 55 + len(data["items"]) * 4
-    page_height_twips = int(page_height_mm * twips_per_mm)
-
     hdc = win32ui.CreateDC()
     hdc.CreatePrinterDC(target_printer)
-    hdc.SetMapMode(MM_TWIPS)
+    hdc.SetMapMode(MM_TEXT)
+
+    dpi_x = hdc.GetDeviceCaps(LOGPIXELSX) or 203
+    dpi_y = hdc.GetDeviceCaps(LOGPIXELSY) or 203
+    printable_width_px = hdc.GetDeviceCaps(HORZRES)
+
+    px_per_mm_x = dpi_x / 25.4
+    px_per_mm_y = dpi_y / 25.4
+
+    if printable_width_px and printable_width_px > 10:
+        page_width_px = printable_width_px
+    else:
+        page_width_px = int(data["paper_width_mm"] * px_per_mm_x)
+
+    page_height_mm = 55 + len(data["items"]) * 4
+    page_height_px = int(page_height_mm * px_per_mm_y)
 
     hdc.StartDoc(f"SARA POS Ticket {data['ticket_id']:08d}")
     hdc.StartPage()
 
-    _draw_ticket_gdi(hdc, page_width_twips, page_height_twips, data, twips_per_mm)
+    _draw_ticket_gdi(hdc, page_width_px, page_height_px, data, px_per_mm_x, px_per_mm_y)
 
     hdc.EndPage()
     hdc.EndDoc()
 
 
-def _draw_ticket_gdi(hdc, page_width, page_height, data, twips_per_mm):
+def _draw_ticket_gdi(hdc, page_width, page_height, data, px_per_mm_x, px_per_mm_y):
+    """
+    MM_TEXT: 1 unidad lógica = 1 píxel, origen arriba-izquierda, Y
+    creciendo hacia abajo (igual que la mayoría de las APIs gráficas
+    "naturales") — no hace falta negar coordenadas como con MM_TWIPS.
+    """
     import win32ui
 
-    def mmval(v):
-        return int(v * twips_per_mm)
+    def mmx(v):
+        return int(v * px_per_mm_x)
 
-    margin = mmval(3)
+    def mmy(v):
+        return int(v * px_per_mm_y)
+
+    margin = mmx(2.5)
     content_left = margin
     content_right = page_width - margin
     usable_width = content_right - content_left
     center = page_width // 2
-    y_from_top = mmval(5)
+    y = mmy(4)
 
-    def to_y(yt):
-        return -yt
-
-    # CreateFont "height" en win32ui con MM_TWIPS espera el alto del
-    # glifo expresado en twips. 1pt = 1/72". 1" = 1440 twips.
-    # => 1pt = 1440/72 = 20 twips.
     def font(size_pt, bold=False):
+        # height en píxeles lógicos: size_pt (1/72") -> px a dpi_y real.
+        height_px = int(size_pt / 72 * px_per_mm_y * 25.4)
         return win32ui.CreateFont({
             "name": "Arial",
-            "height": -int(size_pt * 20),
+            "height": -height_px,
             "weight": 700 if bold else 400,
         })
 
     def line_gap(size_pt):
-        return int(size_pt * 20 * 1.35)
+        return int(size_pt / 72 * px_per_mm_y * 25.4 * 1.5)
 
     def draw(text, size=7, bold=False, align="center", autofit=False):
-        nonlocal y_from_top
+        nonlocal y
         if autofit:
             s = size
             while s > 5.5:
@@ -294,39 +306,39 @@ def _draw_ticket_gdi(hdc, page_width, page_height, data, twips_per_mm):
             x = content_right - w
         else:
             x = content_left
-        hdc.TextOut(x, to_y(y_from_top), text)
-        y_from_top += line_gap(size)
+        hdc.TextOut(x, y, text)
+        y += line_gap(size)
 
-    def hr(gap_before_mm=0.8, gap_after_mm=1.0):
-        nonlocal y_from_top
-        y_from_top += mmval(gap_before_mm)
-        pen = win32ui.CreatePen(0, 4, 0)
+    def hr(gap_before_mm=0.8, gap_after_mm=2.0):
+        nonlocal y
+        y += mmy(gap_before_mm)
+        pen = win32ui.CreatePen(0, 1, 0)
         old_pen = hdc.SelectObject(pen)
-        hdc.MoveTo((content_left, to_y(y_from_top)))
-        hdc.LineTo((content_right, to_y(y_from_top)))
+        hdc.MoveTo((content_left, y))
+        hdc.LineTo((content_right, y))
         hdc.SelectObject(old_pen)
-        y_from_top += mmval(gap_after_mm)
+        y += mmy(gap_after_mm)
 
     def row(left_txt, right_txt, size=6.5, bold=False):
-        nonlocal y_from_top
+        nonlocal y
         fnt = font(size, bold)
         hdc.SelectObject(fnt)
-        hdc.TextOut(content_left, to_y(y_from_top), left_txt)
+        hdc.TextOut(content_left, y, left_txt)
         w, h = hdc.GetTextExtent(right_txt)
-        hdc.TextOut(content_right - w, to_y(y_from_top), right_txt)
-        y_from_top += line_gap(size)
+        hdc.TextOut(content_right - w, y, right_txt)
+        y += line_gap(size)
 
     def row3(left_txt, mid_txt, right_txt, size=6.5, bold=False):
-        nonlocal y_from_top
+        nonlocal y
         fnt = font(size, bold)
         hdc.SelectObject(fnt)
-        hdc.TextOut(content_left, to_y(y_from_top), left_txt)
+        hdc.TextOut(content_left, y, left_txt)
         mid_x = content_left + int(usable_width * 0.68)
         mw, _ = hdc.GetTextExtent(mid_txt)
-        hdc.TextOut(mid_x - mw // 2, to_y(y_from_top), mid_txt)
+        hdc.TextOut(mid_x - mw // 2, y, mid_txt)
         rw, h = hdc.GetTextExtent(right_txt)
-        hdc.TextOut(content_right - rw, to_y(y_from_top), right_txt)
-        y_from_top += line_gap(size)
+        hdc.TextOut(content_right - rw, y, right_txt)
+        y += line_gap(size)
 
     max_chars = 20 if data["paper_width_mm"] <= 58 else 28
 
@@ -339,18 +351,18 @@ def _draw_ticket_gdi(hdc, page_width, page_height, data, twips_per_mm):
     if data["business_cuit"]:
         draw(f"CUIT: {data['business_cuit']}", size=6.5, align="center")
 
-    hr()
+    hr(gap_before_mm=0.6, gap_after_mm=2.0)
 
     # ── Título + fecha/hora + comprobante ──
     draw("Ticket de compra", size=7.5, bold=True, align="center")
     row(f"Fecha: {data['now'].strftime('%d/%m/%Y')}", f"Hora: {data['now'].strftime('%H:%M')}", size=6.5)
     row(f"N°: {data['ticket_id']:08d}", f"Pago: {data['method_label']}", size=6.5)
 
-    hr()
+    hr(gap_before_mm=0.6, gap_after_mm=2.0)
 
     # ── Tabla de items ──
     row3("Descripción", "Cant.", "Importe", size=6.5, bold=True)
-    hr(gap_before_mm=0.3, gap_after_mm=1.4)
+    hr(gap_before_mm=0.3, gap_after_mm=2.2)
 
     for item in data["items"]:
         name     = str(item["name"])[:max_chars]
@@ -359,13 +371,13 @@ def _draw_ticket_gdi(hdc, page_width, page_height, data, twips_per_mm):
         subtotal = qty * price
         row3(name, str(qty), f"{subtotal:,.0f}", size=6.5)
 
-    hr(gap_before_mm=0.6, gap_after_mm=1.6)
+    hr(gap_before_mm=0.6, gap_after_mm=2.4)
 
     # ── Total ──
     row("Total:", f"$ {data['total']:,.0f}", size=9, bold=True)
-    y_from_top += mmval(0.5)
+    y += mmy(0.5)
 
-    hr(gap_before_mm=0.3, gap_after_mm=1.4)
+    hr(gap_before_mm=0.3, gap_after_mm=1.8)
 
     # ── Pie (centrado) ──
     if data["ticket_legend"]:
