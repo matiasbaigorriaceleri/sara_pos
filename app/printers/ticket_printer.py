@@ -76,8 +76,8 @@ def _get_ticket_data(ticket_id, items, total, payment_method):
 def generate_ticket_pdf(ticket_id, items, total, payment_method):
     data = _get_ticket_data(ticket_id, items, total, payment_method)
     page_width = data["paper_width_mm"] * mm
-    base_height = 95 * mm
-    item_height = len(items) * 5.5 * mm
+    base_height = 50 * mm
+    item_height = len(items) * 4 * mm
     page_height = base_height + item_height
 
     tmp_file = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
@@ -90,19 +90,31 @@ def generate_ticket_pdf(ticket_id, items, total, payment_method):
     return tmp_path
 
 
+from reportlab.pdfbase.pdfmetrics import stringWidth
+
+
 def _draw_ticket_reportlab(c, page_width, page_height, data):
-    margin = 3.5 * mm
-    y = page_height - 6 * mm
+    margin = 3 * mm
+    y = page_height - 5 * mm
     center = page_width / 2
     content_left = margin
     content_right = page_width - margin
+    usable_width = content_right - content_left
 
     def line_gap(size):
-        return (size + 2.6) * 0.55 * mm
+        return size * 0.40 * mm + 1.4 * mm
 
-    def draw(text, size=8, bold=False, align="center", gap=None):
+    def fit_size(text, max_size, font_name, max_width):
+        size = max_size
+        while size > 5.5 and stringWidth(text, font_name, size) > max_width:
+            size -= 0.5
+        return size
+
+    def draw(text, size=7, bold=False, align="center", gap=None, autofit=False):
         nonlocal y
         font = "Helvetica-Bold" if bold else "Helvetica"
+        if autofit:
+            size = fit_size(text, size, font, usable_width)
         c.setFont(font, size)
         if align == "center":
             c.drawCentredString(center, y, text)
@@ -112,80 +124,84 @@ def _draw_ticket_reportlab(c, page_width, page_height, data):
             c.drawRightString(content_right, y, text)
         y -= gap if gap is not None else line_gap(size)
 
-    def hr(gap_before=1.2, gap_after=1.6, dashed=False):
+    def hr(gap_before=0.3, gap_after=1.0, dashed=False):
         nonlocal y
         y -= gap_before * mm
-        c.setLineWidth(0.5)
+        c.setLineWidth(0.4)
         if dashed:
-            c.setDash(1, 1.3)
+            c.setDash(1, 1.2)
         c.line(content_left, y, content_right, y)
         c.setDash()
         y -= gap_after * mm
 
     # ── Encabezado (centrado) ──
-    draw(data["business_name"].upper(), size=11, bold=True, align="center")
+    draw(data["business_name"].upper(), size=10, bold=True, align="center", autofit=True)
     if data["business_address"]:
-        draw(data["business_address"], size=7, align="center")
+        draw(data["business_address"], size=6.5, align="center", autofit=True)
     if data["business_phone"]:
-        draw(f"Tel: {data['business_phone']}", size=7, align="center")
+        draw(f"Tel: {data['business_phone']}", size=6.5, align="center")
     if data["business_cuit"]:
-        draw(f"CUIT: {data['business_cuit']}", size=7, align="center")
+        draw(f"CUIT: {data['business_cuit']}", size=6.5, align="center")
 
-    hr(gap_before=1.5, gap_after=1.8)
+    hr(gap_before=0.6, gap_after=2.0)
+    draw("Ticket de compra", size=7.5, bold=True, align="center")
+    y -= 0.3 * mm
 
-    # ── Datos del comprobante (izquierda) ──
-    draw("TICKET DE VENTA", size=9, bold=True, align="center")
-    y -= 0.8 * mm
-    draw(f"N° {data['ticket_id']:08d}", size=8, bold=False, align="left")
-    draw(data["now"].strftime("%d/%m/%Y  %H:%M"), size=7, align="left")
-    draw(f"Forma de pago: {data['method_label']}", size=7, align="left")
+    col_mid = content_left + usable_width * 0.5
+    c.setFont("Helvetica", 6.5)
+    c.drawString(content_left, y, f"Fecha: {data['now'].strftime('%d/%m/%Y')}")
+    c.drawRightString(content_right, y, f"Hora: {data['now'].strftime('%H:%M')}")
+    y -= line_gap(6.5)
+    c.drawString(content_left, y, f"N°: {data['ticket_id']:08d}")
+    c.drawRightString(content_right, y, f"Pago: {data['method_label']}")
+    y -= line_gap(6.5)
 
-    hr(gap_before=1.5, gap_after=1.8)
+    hr(gap_before=0.6, gap_after=1.6)
 
-    # ── Tabla de items ──
-    col_qty   = content_left + 28 * mm
-    col_price = content_left + 38 * mm
+    # ── Tabla de items (una sola línea por item: Desc | Cant | Importe) ──
+    col_cant_x  = content_left + usable_width * 0.68
+    col_importe = content_right
 
-    c.setFont("Helvetica-Bold", 7)
-    c.drawString(content_left, y, "DESCRIPCIÓN")
-    c.drawCentredString(col_qty, y, "CANT")
-    c.drawRightString(content_right, y, "IMPORTE")
-    y -= 3.2 * mm
-    hr(gap_before=0.4, gap_after=1.4)
+    c.setFont("Helvetica-Bold", 6.5)
+    c.drawString(content_left, y, "Descripción")
+    c.drawCentredString(col_cant_x, y, "Cant.")
+    c.drawRightString(col_importe, y, "Importe")
+    y -= line_gap(6.5)
+    hr(gap_before=0.6, gap_after=2.2)
+
+    max_chars = 20 if data["paper_width_mm"] <= 58 else 28
 
     for item in data["items"]:
-        name     = str(item["name"])[:24]
+        name     = str(item["name"])[:max_chars]
         qty      = int(item["quantity"])
         price    = float(item["price"])
         subtotal = qty * price
 
-        c.setFont("Helvetica", 7.5)
+        c.setFont("Helvetica", 6.5)
         c.drawString(content_left, y, name)
-        y -= 3.4 * mm
-        c.setFont("Helvetica", 7)
-        c.drawString(content_left + 2 * mm, y, f"{qty} x $ {price:,.0f}")
-        c.drawRightString(content_right, y, f"$ {subtotal:,.0f}")
-        y -= 4.4 * mm
+        c.drawCentredString(col_cant_x, y, str(qty))
+        c.drawRightString(col_importe, y, f"{subtotal:,.0f}")
+        y -= line_gap(6.5)
 
-    hr(gap_before=0.8, gap_after=1.8)
+    hr(gap_before=0.6, gap_after=2.4)
 
     # ── Total ──
-    c.setFont("Helvetica-Bold", 11)
-    c.drawString(content_left, y, "TOTAL")
+    c.setFont("Helvetica-Bold", 9)
+    c.drawString(content_left, y, "Total:")
     c.drawRightString(content_right, y, f"$ {data['total']:,.0f}")
-    y -= 6 * mm
+    y -= line_gap(9) + 0.5 * mm
 
-    hr(gap_before=0.5, gap_after=2.2, dashed=True)
+    hr(gap_before=0.3, gap_after=1.8, dashed=True)
 
     # ── Pie (centrado) ──
     if data["ticket_legend"]:
-        draw(data["ticket_legend"], size=6.5, align="center")
+        draw(data["ticket_legend"], size=5.8, align="center")
     if data["ticket_footer"]:
-        y -= 0.6 * mm
-        draw(data["ticket_footer"], size=8, bold=True, align="center")
+        y -= 0.4 * mm
+        draw(data["ticket_footer"], size=7, bold=True, align="center")
 
-    y -= 2 * mm
-    draw("BIMABA™ - SARA POS", size=5.5, align="center")
+    y -= 1.2 * mm
+    draw("BIMABA™ - SARA POS", size=5, align="center")
 
 
 # ──────────────────────────────────────────────────────────
@@ -212,7 +228,7 @@ def _print_windows_gdi(data, printer_name):
     page_width_twips = int(paper_width_mm * twips_per_mm)
 
     # Alto generoso (papel continuo); se recorta al avance real de impresión.
-    page_height_mm = 90 + len(data["items"]) * 6
+    page_height_mm = 55 + len(data["items"]) * 4
     page_height_twips = int(page_height_mm * twips_per_mm)
 
     hdc = win32ui.CreateDC()
@@ -234,26 +250,19 @@ def _draw_ticket_gdi(hdc, page_width, page_height, data, twips_per_mm):
     def mmval(v):
         return int(v * twips_per_mm)
 
-    margin = mmval(3.5)
+    margin = mmval(3)
     content_left = margin
     content_right = page_width - margin
+    usable_width = content_right - content_left
     center = page_width // 2
-    # En MM_TWIPS el origen está abajo a la izquierda con Y creciendo hacia
-    # arriba; trabajamos con y_from_top y lo convertimos a negativo.
-    y_from_top = mmval(6)
+    y_from_top = mmval(5)
 
     def to_y(yt):
         return -yt
 
-    def make_font(size_pt, bold=False):
-        return win32ui.CreateFont({
-            "name": "Arial",
-            "height": -int(size_pt * twips_per_mm * 25.4 / 72 / 1),
-            "weight": 700 if bold else 400,
-        })
-
-    # win32ui CreateFont height espera unidades lógicas (twips acá). Usamos
-    # una conversión directa pt -> twips: 1pt = 20 twips.
+    # CreateFont "height" en win32ui con MM_TWIPS espera el alto del
+    # glifo expresado en twips. 1pt = 1/72". 1" = 1440 twips.
+    # => 1pt = 1440/72 = 20 twips.
     def font(size_pt, bold=False):
         return win32ui.CreateFont({
             "name": "Arial",
@@ -261,12 +270,21 @@ def _draw_ticket_gdi(hdc, page_width, page_height, data, twips_per_mm):
             "weight": 700 if bold else 400,
         })
 
-    def text_width(hdc_, txt, fnt):
-        hdc_.SelectObject(fnt)
-        return hdc_.GetTextExtent(txt)[0]
+    def line_gap(size_pt):
+        return int(size_pt * 20 * 1.35)
 
-    def draw(text, size=16, bold=False, align="center"):
+    def draw(text, size=7, bold=False, align="center", autofit=False):
         nonlocal y_from_top
+        if autofit:
+            s = size
+            while s > 5.5:
+                fnt_test = font(s, bold)
+                hdc.SelectObject(fnt_test)
+                w_test, _ = hdc.GetTextExtent(text)
+                if w_test <= usable_width:
+                    break
+                s -= 0.5
+            size = s
         fnt = font(size, bold)
         hdc.SelectObject(fnt)
         w, h = hdc.GetTextExtent(text)
@@ -277,80 +295,85 @@ def _draw_ticket_gdi(hdc, page_width, page_height, data, twips_per_mm):
         else:
             x = content_left
         hdc.TextOut(x, to_y(y_from_top), text)
-        y_from_top += int(h * 1.15)
+        y_from_top += line_gap(size)
 
-    def hr(gap_before=mmval(1.2), gap_after=mmval(1.6)):
+    def hr(gap_before_mm=0.8, gap_after_mm=1.0):
         nonlocal y_from_top
-        y_from_top += gap_before
+        y_from_top += mmval(gap_before_mm)
         pen = win32ui.CreatePen(0, 4, 0)
         old_pen = hdc.SelectObject(pen)
         hdc.MoveTo((content_left, to_y(y_from_top)))
         hdc.LineTo((content_right, to_y(y_from_top)))
         hdc.SelectObject(old_pen)
-        y_from_top += gap_after
+        y_from_top += mmval(gap_after_mm)
 
-    # Tamaños en "puntos" aproximados, escalados a twips internamente.
-    SZ_HEADER = 22
-    SZ_SMALL  = 15
-    SZ_BODY   = 16
-    SZ_TOTAL  = 24
+    def row(left_txt, right_txt, size=6.5, bold=False):
+        nonlocal y_from_top
+        fnt = font(size, bold)
+        hdc.SelectObject(fnt)
+        hdc.TextOut(content_left, to_y(y_from_top), left_txt)
+        w, h = hdc.GetTextExtent(right_txt)
+        hdc.TextOut(content_right - w, to_y(y_from_top), right_txt)
+        y_from_top += line_gap(size)
 
-    draw(data["business_name"].upper(), size=SZ_HEADER, bold=True, align="center")
+    def row3(left_txt, mid_txt, right_txt, size=6.5, bold=False):
+        nonlocal y_from_top
+        fnt = font(size, bold)
+        hdc.SelectObject(fnt)
+        hdc.TextOut(content_left, to_y(y_from_top), left_txt)
+        mid_x = content_left + int(usable_width * 0.68)
+        mw, _ = hdc.GetTextExtent(mid_txt)
+        hdc.TextOut(mid_x - mw // 2, to_y(y_from_top), mid_txt)
+        rw, h = hdc.GetTextExtent(right_txt)
+        hdc.TextOut(content_right - rw, to_y(y_from_top), right_txt)
+        y_from_top += line_gap(size)
+
+    max_chars = 20 if data["paper_width_mm"] <= 58 else 28
+
+    # ── Encabezado (centrado) ──
+    draw(data["business_name"].upper(), size=10, bold=True, align="center", autofit=True)
     if data["business_address"]:
-        draw(data["business_address"], size=SZ_SMALL, align="center")
+        draw(data["business_address"], size=6.5, align="center", autofit=True)
     if data["business_phone"]:
-        draw(f"Tel: {data['business_phone']}", size=SZ_SMALL, align="center")
+        draw(f"Tel: {data['business_phone']}", size=6.5, align="center")
     if data["business_cuit"]:
-        draw(f"CUIT: {data['business_cuit']}", size=SZ_SMALL, align="center")
+        draw(f"CUIT: {data['business_cuit']}", size=6.5, align="center")
 
     hr()
 
-    draw("TICKET DE VENTA", size=SZ_BODY, bold=True, align="center")
-    draw(f"N° {data['ticket_id']:08d}", size=SZ_BODY, align="left")
-    draw(data["now"].strftime("%d/%m/%Y  %H:%M"), size=SZ_SMALL, align="left")
-    draw(f"Forma de pago: {data['method_label']}", size=SZ_SMALL, align="left")
+    # ── Título + fecha/hora + comprobante ──
+    draw("Ticket de compra", size=7.5, bold=True, align="center")
+    row(f"Fecha: {data['now'].strftime('%d/%m/%Y')}", f"Hora: {data['now'].strftime('%H:%M')}", size=6.5)
+    row(f"N°: {data['ticket_id']:08d}", f"Pago: {data['method_label']}", size=6.5)
 
     hr()
 
-    draw("DESCRIPCIÓN / CANT x PRECIO", size=SZ_SMALL, bold=True, align="left")
-    hr(gap_before=mmval(0.4), gap_after=mmval(1.4))
+    # ── Tabla de items ──
+    row3("Descripción", "Cant.", "Importe", size=6.5, bold=True)
+    hr(gap_before_mm=0.3, gap_after_mm=1.4)
 
     for item in data["items"]:
-        name     = str(item["name"])[:28]
+        name     = str(item["name"])[:max_chars]
         qty      = int(item["quantity"])
         price    = float(item["price"])
         subtotal = qty * price
+        row3(name, str(qty), f"{subtotal:,.0f}", size=6.5)
 
-        draw(name, size=SZ_BODY, align="left")
-        # Línea de cantidad x precio (izq) e importe (der) en la misma altura:
-        fnt = font(SZ_SMALL, False)
-        hdc.SelectObject(fnt)
-        left_txt = f"{qty} x $ {price:,.0f}"
-        hdc.TextOut(content_left + mmval(2), to_y(y_from_top), left_txt)
-        w, h = hdc.GetTextExtent(f"$ {subtotal:,.0f}")
-        hdc.TextOut(content_right - w, to_y(y_from_top), f"$ {subtotal:,.0f}")
-        y_from_top += int(h * 1.3)
+    hr(gap_before_mm=0.6, gap_after_mm=1.6)
 
-    hr(gap_before=mmval(0.8), gap_after=mmval(1.8))
+    # ── Total ──
+    row("Total:", f"$ {data['total']:,.0f}", size=9, bold=True)
+    y_from_top += mmval(0.5)
 
-    draw("TOTAL", size=SZ_TOTAL, bold=True, align="left")
-    fnt = font(SZ_TOTAL, True)
-    hdc.SelectObject(fnt)
-    total_txt = f"$ {data['total']:,.0f}"
-    w, h = hdc.GetTextExtent(total_txt)
-    # Reescribimos en la misma línea del "TOTAL" (retrocedemos la altura usada)
-    y_from_top -= int(h * 1.15)
-    hdc.TextOut(content_right - w, to_y(y_from_top), total_txt)
-    y_from_top += int(h * 1.15)
+    hr(gap_before_mm=0.3, gap_after_mm=1.4)
 
-    hr(gap_before=mmval(0.5), gap_after=mmval(2.2))
-
+    # ── Pie (centrado) ──
     if data["ticket_legend"]:
-        draw(data["ticket_legend"], size=13, align="center")
+        draw(data["ticket_legend"], size=5.8, align="center")
     if data["ticket_footer"]:
-        draw(data["ticket_footer"], size=SZ_BODY, bold=True, align="center")
+        draw(data["ticket_footer"], size=7, bold=True, align="center")
 
-    draw("BIMABA™ - SARA POS", size=11, align="center")
+    draw("BIMABA™ - SARA POS", size=5, align="center")
 
 
 # ──────────────────────────────────────────────────────────
