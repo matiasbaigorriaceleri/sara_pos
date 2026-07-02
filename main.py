@@ -7,6 +7,19 @@ if sys.platform == "win32":
     except Exception:
         pass
 
+# Fix crítico: con --windowed (sin consola), PyInstaller deja
+# sys.stdout/sys.stderr en None. Algunas librerías (en particular
+# win32print/win32ui, usadas para imprimir tickets en Windows) escriben
+# advertencias internamente y fallan en silencio si stdout/stderr no son
+# streams válidos — eso causaba que la impresión no hiciera nada en la
+# versión compilada con --windowed, aunque funcionaba perfecto corriendo
+# "python main.py" o un build sin --windowed.
+import io
+if sys.stdout is None:
+    sys.stdout = io.StringIO()
+if sys.stderr is None:
+    sys.stderr = io.StringIO()
+
 import sys
 import os
 import bcrypt
@@ -28,6 +41,10 @@ from app.models.client_account_model import ClientAccount
 from app.models.cash_movement_model import CashMovement
 
 from app.views.login_window import LoginWindow
+
+# ── Migración automática de BD (agrega columnas faltantes en bases viejas) ──
+from app.database.migrate_auto import run_migrations
+run_migrations()
 
 # ── Crear tablas ──────────────────────────────────────
 Base.metadata.create_all(bind=engine)
