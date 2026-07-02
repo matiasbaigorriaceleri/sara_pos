@@ -26,8 +26,8 @@ from datetime import datetime
 # ── Credenciales propias de BIMABA (hardcodeadas, NO tocar desde Configuración) ──
 _SMTP_HOST = "c2781833.ferozo.com"
 _SMTP_PORT = 465  # SSL
-_SMTP_USER = "contactossara@bimaba.com"
-_SMTP_PASSWORD = "S4r4POs2026/@*"
+_SMTP_USER = "soportesara@bimaba.com"
+_SMTP_PASSWORD = "Saar4POs2026/@*"
 
 _DESTINATARIO = "soportesara@bimaba.com"
 
